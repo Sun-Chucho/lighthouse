@@ -1,6 +1,6 @@
 # Lighthouse
 
-A clean, frontend-only foundation for the Lighthouse Lodge management system.
+A clean Lighthouse Lodge management foundation with a React frontend and Firebase connectivity.
 
 ## What is included
 
@@ -8,6 +8,8 @@ A clean, frontend-only foundation for the Lighthouse Lodge management system.
 - Dark brown, black, cream, and gold visual system
 - Responsive overview and room directory
 - 20 configured rooms split into Luxury and Classic categories
+- Firebase Web SDK with Firestore and browser-safe Analytics initialization
+- Firebase Admin SDK for trusted server-side Firestore access
 - Static Vite build for simple frontend hosting
 
 ## Room configuration
@@ -19,9 +21,23 @@ A clean, frontend-only foundation for the Lighthouse Lodge management system.
 
 Room configuration lives in `src/data/rooms.ts`.
 
-## Clean-slate scope
+## Firebase
 
-This repository intentionally has no backend, database, API routes, authentication, payment processing, transactions, guest records, bookings, menu, bar stock, kitchen stock, inventory, seeds, or legacy-system history. Those capabilities can be designed and connected in later phases without inheriting any prior data or infrastructure.
+The browser integration is in `src/lib/firebase.ts`. Trusted server-side access is isolated in `server/firebase-admin.mjs`; never import that file into frontend code.
+
+The local service-account key belongs at `firebase-service-account.json` in the repository root. That path and common service-account filename patterns are ignored by Git. A different local path can be supplied through `GOOGLE_APPLICATION_CREDENTIALS`.
+
+`firestore.rules` denies all browser reads and writes by default. Keep that baseline until Lighthouse authentication and per-role permissions are designed; trusted Admin SDK code is controlled through IAM instead.
+
+Before the first database check, create the project's default Cloud Firestore database in the [Firebase console](https://console.firebase.google.com/project/lighthouse-bf85b/firestore). Choose its permanent location deliberately; the application does not make that infrastructure decision automatically.
+
+Verify Admin authentication and Firestore connectivity with a read-only check:
+
+```bash
+npm run firebase:verify
+```
+
+This foundation does not create collections, seed documents, or restore any old records. Transactions, guest records, bookings, menu items, drinks, kitchen stock, inventory, and other domain features remain intentionally absent until they are designed for Lighthouse.
 
 ## Run locally
 
@@ -37,6 +53,7 @@ Open [http://localhost:3000](http://localhost:3000).
 ```bash
 npm run typecheck
 npm run build
+npm run firebase:verify
 ```
 
 The production-ready static frontend is written to `dist/`.

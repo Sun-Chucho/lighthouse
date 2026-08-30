@@ -124,8 +124,8 @@ export function LighthouseDashboard() {
         <div className="system-card">
           <span className="system-card__icon"><Sparkles size={17} /></span>
           <div>
-            <p>Clean foundation</p>
-            <span>Frontend only</span>
+            <p>Cloud foundation</p>
+            <span>Firebase SDK</span>
           </div>
         </div>
 
@@ -160,7 +160,7 @@ export function LighthouseDashboard() {
           </div>
           <div className="topbar__status">
             <span className="status-dot" />
-            <span>Frontend ready</span>
+            <span>Firebase configured</span>
           </div>
           <div className="profile-mark" aria-label="Lighthouse profile">LH</div>
         </header>
@@ -260,12 +260,12 @@ function Overview({ onOpenRooms }: { onOpenRooms: (filter: RoomFilter) => void }
         <div className="foundation-strip__icon"><Building2 size={24} /></div>
         <div>
           <p className="kicker">System status</p>
-          <h3>Clean and ready to connect</h3>
+          <h3>Firebase foundation configured</h3>
         </div>
         <p>
-          No guest records or operational history are loaded. Services and integrations can be added from a blank foundation.
+          No guest records or operational history are loaded. Database activation and Lighthouse domain services come next.
         </p>
-        <span className="foundation-strip__badge">0 connected services</span>
+        <span className="foundation-strip__badge">Cloud project linked</span>
       </section>
     </div>
   );

@@ -22,6 +22,10 @@ npm-debug.log*
 .env.*
 !.env.example
 
+# Firebase Admin credentials are local secrets and must never be committed
+/firebase-service-account.json
+/*firebase-adminsdk*.json
+/*service-account*.json
+
 # TypeScript
 *.tsbuildinfo
-next-env.d.ts
