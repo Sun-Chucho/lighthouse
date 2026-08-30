@@ -2,7 +2,8 @@
 
 Lighthouse Lodge is an offline-first booking website and role-based staff application built with React, Firebase, and Electron.
 
-- Live website: <https://lighthouse-bf85b.web.app/>
+- Live website: <https://www.lighthousemoshi.com/>
+- Staff portal: <https://www.lighthousemoshi.com/staff>
 - Latest Windows release: <https://github.com/Sun-Chucho/lighthouse/releases/latest>
 
 ## Included
