@@ -136,16 +136,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     async signOut() {
       staffSessionRef.current = null;
-      try {
-        const { getAuth, signOut: firebaseSignOut } = await import("firebase/auth");
-        await firebaseSignOut(getAuth(firebaseApp));
-      } catch {
-        // Local PIN sign-out must remain available without a network connection.
-      } finally {
-        await window.lighthouseDesktop?.clearVerifiedSession().catch(() => false);
-        setSession(null);
-        setStatus("signed-out");
-      }
+      setSession(null);
+      setStatus("signed-out");
+      void window.lighthouseDesktop?.clearVerifiedSession().catch(() => false);
+      void import("firebase/auth")
+        .then(({ getAuth, signOut: firebaseSignOut }) => firebaseSignOut(getAuth(firebaseApp)))
+        .catch(() => undefined);
     },
   }), [ensureAnonymousSession, session, status]);
 
