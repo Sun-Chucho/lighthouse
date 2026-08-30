@@ -21,7 +21,28 @@ let firestoreInitialization: Promise<Firestore> | undefined;
 
 export function initializeFirebaseFirestore(): Promise<Firestore> {
   firestoreInitialization ??= import("firebase/firestore")
-    .then(({ getFirestore }) => getFirestore(firebaseApp));
+    .then(({
+      getFirestore,
+      initializeFirestore,
+      persistentLocalCache,
+      persistentMultipleTabManager,
+    }) => {
+      try {
+        return initializeFirestore(firebaseApp, {
+          localCache: persistentLocalCache({
+            tabManager: persistentMultipleTabManager(),
+          }),
+        });
+      } catch (error) {
+        const code = typeof error === "object" && error && "code" in error
+          ? String(error.code)
+          : "";
+        if (code === "failed-precondition" || code === "already-initialized") {
+          return getFirestore(firebaseApp);
+        }
+        throw error;
+      }
+    });
 
   return firestoreInitialization;
 }

@@ -1,31 +1,87 @@
 {
   "name": "lighthouse",
   "version": "0.1.0",
+  "productName": "Lighthouse Lodge",
+  "description": "Offline-first Lighthouse Lodge staff and booking application.",
+  "author": "Lighthouse Lodge",
   "private": true,
+  "main": "electron/main.mjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "desktop:dev": "node scripts/desktop-dev.mjs",
+    "desktop:run": "npm run build && electron .",
+    "desktop:dir": "npm run build && electron-builder --win --dir --publish never",
+    "desktop:pack": "npm run build && electron-builder --win nsis --publish never",
+    "desktop:publish": "npm run build && electron-builder --win nsis --publish always",
     "firebase:create-user": "node scripts/manage-staff-user.mjs",
     "firebase:verify-auth": "node scripts/verify-firebase-auth.mjs",
+    "firebase:verify-client": "node scripts/verify-client-sync.mjs",
     "firebase:verify": "node scripts/verify-firebase-admin.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "firebase": "12.18.0",
-    "firebase-admin": "14.3.0",
-    "lucide-react": "0.475.0",
-    "react": "19.2.1",
-    "react-dom": "19.2.1"
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "@types/node": "20.19.43",
     "@types/react": "19.0.10",
     "@types/react-dom": "19.0.4",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
+    "firebase": "^12.18.0",
+    "firebase-admin": "^14.3.0",
+    "lucide-react": "^0.475.0",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
     "typescript": "5.9.3",
     "vite": "8.2.2"
   },
   "overrides": {
     "uuid": "11.1.1"
+  },
+  "build": {
+    "appId": "tz.co.lighthouse.lodge",
+    "productName": "Lighthouse Lodge",
+    "asar": true,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "Lighthouse-Lodge-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Lighthouse Lodge",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Sun-Chucho",
+        "repo": "lighthouse",
+        "releaseType": "release"
+      }
+    ]
   }
 }

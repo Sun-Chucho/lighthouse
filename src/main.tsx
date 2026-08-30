@@ -1,7 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { LighthouseApp } from "./app";
+import { DesktopUpdateBanner } from "./components/desktop-update-banner";
 import { AuthProvider } from "./context/auth-context";
+import { SyncProvider } from "./context/sync-context";
 import {
   initializeFirebaseAnalytics,
   initializeFirebaseFirestore,
@@ -20,7 +22,10 @@ if (!rootElement) {
 createRoot(rootElement).render(
   <StrictMode>
     <AuthProvider>
-      <LighthouseApp />
+      <SyncProvider>
+        <LighthouseApp />
+        <DesktopUpdateBanner />
+      </SyncProvider>
     </AuthProvider>
   </StrictMode>,
 );

@@ -1,6 +1,7 @@
 import { ArrowLeft, ArrowRight, LockKeyhole, ShieldAlert } from "lucide-react";
 import { useEffect } from "react";
 import { DashboardShell, isModuleAvailable } from "./components/dashboard-shell";
+import { PublicLanding } from "./components/public-landing";
 import { RoleLanding } from "./components/role-landing";
 import { RoleLogin } from "./components/role-login";
 import { useAuth } from "./context/auth-context";
@@ -24,7 +25,7 @@ export function LighthouseApp() {
     if (pathname === STAFF_PORTAL_PATH) document.title = "Staff Login | Lighthouse Lodge";
   }, [pathname]);
 
-  if (pathname === "/") return <RootRedirect />;
+  if (pathname === "/") return <PublicLanding />;
   if (pathname === STAFF_PORTAL_PATH) return <RoleLanding />;
   if (segments[0] === "dashboard") return <LegacyDashboardRedirect />;
 
@@ -35,14 +36,6 @@ export function LighthouseApp() {
   }
 
   return <NotFound />;
-}
-
-function RootRedirect() {
-  useEffect(() => {
-    window.location.replace(STAFF_PORTAL_PATH);
-  }, []);
-
-  return <LoadingScreen />;
 }
 
 function ProtectedWorkspace({ role, moduleId }: { role: StaffRole; moduleId: Parameters<typeof DashboardShell>[0]["moduleId"] }) {

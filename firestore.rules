@@ -2,6 +2,113 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function hasRole(role) {
+      return signedIn()
+        && (
+          request.auth.token.get('role', '') == role
+          || request.auth.token.get('staffRole', '') == role
+        );
+    }
+
+    function staffMember() {
+      return hasRole('manager')
+        || hasRole('director')
+        || hasRole('reception')
+        || hasRole('inventory')
+        || hasRole('kitchen')
+        || hasRole('bar');
+    }
+
+    function bookingOperator() {
+      return hasRole('manager') || hasRole('director') || hasRole('reception');
+    }
+
+    function validBookingInquiry() {
+      return request.resource.data.keys().hasOnly([
+          'guestUid',
+          'guestName',
+          'email',
+          'phone',
+          'checkIn',
+          'checkOut',
+          'guests',
+          'roomType',
+          'note',
+          'status',
+          'source',
+          'clientCreatedAt',
+          'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'guestUid',
+          'guestName',
+          'email',
+          'phone',
+          'checkIn',
+          'checkOut',
+          'guests',
+          'roomType',
+          'note',
+          'status',
+          'source',
+          'clientCreatedAt',
+          'createdAt'
+        ])
+        && request.resource.data.guestUid == request.auth.uid
+        && request.resource.data.guestName is string
+        && request.resource.data.guestName.size() >= 2
+        && request.resource.data.guestName.size() <= 120
+        && request.resource.data.email is string
+        && request.resource.data.email.size() >= 5
+        && request.resource.data.email.size() <= 160
+        && request.resource.data.phone is string
+        && request.resource.data.phone.size() >= 5
+        && request.resource.data.phone.size() <= 40
+        && request.resource.data.checkIn is string
+        && request.resource.data.checkIn.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.checkOut is string
+        && request.resource.data.checkOut.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.guests is int
+        && request.resource.data.guests >= 1
+        && request.resource.data.guests <= 12
+        && request.resource.data.roomType in ['luxury', 'classic', 'either']
+        && request.resource.data.note is string
+        && request.resource.data.note.size() <= 600
+        && request.resource.data.status == 'pending'
+        && request.resource.data.source in ['web', 'windows']
+        && request.resource.data.clientCreatedAt is string
+        && request.resource.data.createdAt == request.time;
+    }
+
+    match /bookingEnquiries/{inquiryId} {
+      allow create: if signedIn() && validBookingInquiry();
+      allow get: if staffMember()
+        || (signedIn() && resource.data.guestUid == request.auth.uid);
+      allow list: if staffMember();
+      allow update: if bookingOperator()
+        && request.resource.data.guestUid == resource.data.guestUid
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'assignedTo',
+          'updatedAt'
+        ])
+        && request.resource.data.status in ['pending', 'contacted', 'confirmed', 'declined']
+        && request.resource.data.updatedAt == request.time
+        && (
+          !('assignedTo' in request.resource.data)
+          || (
+            request.resource.data.assignedTo is string
+            && request.resource.data.assignedTo.size() <= 128
+          )
+        );
+      allow delete: if hasRole('manager') || hasRole('director');
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

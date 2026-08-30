@@ -10,6 +10,13 @@ export const STAFF_ROLES = [
 export type StaffRole = (typeof STAFF_ROLES)[number];
 
 export const STAFF_PORTAL_PATH = "/staff";
+export const VISIBLE_STAFF_ROLES = [
+  "manager",
+  "reception",
+  "inventory",
+  "kitchen",
+  "bar",
+] as const satisfies readonly StaffRole[];
 
 export type RoleConfig = {
   slug: string;
@@ -28,7 +35,7 @@ export const ROLE_CONFIG: Record<StaffRole, RoleConfig> = {
     initials: "HM",
   },
   director: {
-    slug: "md",
+    slug: "login",
     label: "Managing Director",
     shortLabel: "Director",
     description: "Executive access to high-level lodge performance and reports.",
@@ -96,7 +103,8 @@ export function normalizeStaffRole(value: unknown): StaffRole | null {
 }
 
 export function roleFromPathSegment(segment: string | undefined): StaffRole | null {
-  return normalizeStaffRole(segment);
+  const normalizedSegment = segment?.trim().toLowerCase();
+  return STAFF_ROLES.find((role) => ROLE_CONFIG[role].slug === normalizedSegment) ?? null;
 }
 
 export function getRoleLoginPath(role: StaffRole): string {

@@ -10,6 +10,8 @@ import {
   ChevronRight,
   CircleUserRound,
   ClipboardList,
+  Cloud,
+  CloudOff,
   ConciergeBell,
   CreditCard,
   DoorOpen,
@@ -30,12 +32,14 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useAuth } from "../context/auth-context";
+import { useSync } from "../context/sync-context";
 import { formatPrice, ROOM_CATEGORIES, ROOMS, type RoomCategory } from "../data/rooms";
 import { AppLink, navigateTo } from "../lib/navigation";
 import {
   getRoleHomePath,
   getRoleLoginPath,
   ROLE_CONFIG,
+  STAFF_PORTAL_PATH,
   type StaffRole,
 } from "../types/roles";
 
@@ -184,6 +188,7 @@ export function isModuleAvailable(role: StaffRole, moduleId: string): moduleId i
 
 export function DashboardShell({ role, moduleId }: { role: StaffRole; moduleId: ModuleId }) {
   const { session, signOut } = useAuth();
+  const { pendingCount, status: syncStatus } = useSync();
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const config = ROLE_CONFIG[role];
   const navigation = ROLE_NAVIGATION[role];
@@ -191,7 +196,7 @@ export function DashboardShell({ role, moduleId }: { role: StaffRole; moduleId: 
 
   const handleLogout = async () => {
     await signOut();
-    navigateTo(getRoleLoginPath(role), { replace: true });
+    navigateTo(STAFF_PORTAL_PATH, { replace: true });
   };
 
   return (
@@ -266,7 +271,10 @@ export function DashboardShell({ role, moduleId }: { role: StaffRole; moduleId: 
             <p className="topbar__title">{activeItem.label}</p>
             <p className="topbar__subtitle">{config.label} · Lighthouse Lodge</p>
           </div>
-          <div className="topbar__status"><span className="status-dot" /><span>Firebase authenticated</span></div>
+          <div className={`topbar__status ${syncStatus === "offline" ? "topbar__status--offline" : ""}`}>
+            {syncStatus === "offline" ? <CloudOff size={15} /> : <Cloud size={15} />}
+            <span>{syncStatus === "syncing" ? "Synchronizing data" : syncStatus === "offline" ? `${pendingCount} waiting · offline` : "Online · data synced"}</span>
+          </div>
           <button className="topbar-alert" type="button" aria-label="Notifications"><Bell size={17} /><span>0</span></button>
           <div className="profile-mark" aria-label={`${config.label} profile`}>{config.initials}</div>
         </header>
@@ -335,7 +343,7 @@ function Overview({ role, navigation }: { role: StaffRole; navigation: Navigatio
           <div className="readiness-list">
             <div><span className="readiness-dot readiness-dot--ready" /><p><strong>Role routes</strong><small>Restored and protected</small></p></div>
             <div><span className="readiness-dot readiness-dot--ready" /><p><strong>Firebase Auth</strong><small>Client and claims wired</small></p></div>
-            <div><span className="readiness-dot readiness-dot--pending" /><p><strong>Cloud Firestore</strong><small>Project activation required</small></p></div>
+            <div><span className="readiness-dot readiness-dot--ready" /><p><strong>Cloud Firestore</strong><small>Persistent offline sync active</small></p></div>
             <div><span className="readiness-dot" /><p><strong>Operational records</strong><small>Clean slate · 0 imported</small></p></div>
           </div>
         </aside>
@@ -390,7 +398,7 @@ function getMetrics(role: StaffRole): Array<{ label: string; value: string; note
   return [
     { label: "Configured rooms", value: "20", note: "10 Luxury · 10 Classic", icon: BedDouble },
     { label: "Active bookings", value: "0", note: "No imported reservations", icon: ClipboardList },
-    { label: "Staff portals", value: "6", note: "Role routes restored", icon: Users },
+    { label: "Staff portals", value: "5", note: "Director access is direct-only", icon: Users },
     { label: "Operational data", value: "0", note: "Clean Lighthouse start", icon: Building2 },
   ];
 }

@@ -1,6 +1,7 @@
 import type { User } from "firebase/auth";
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -17,12 +18,15 @@ export type StaffSession = {
   role: StaffRole;
 };
 
-type AuthStatus = "loading" | "signed-out" | "authenticated" | "unauthorized";
+type AuthStatus = "loading" | "signed-out" | "guest" | "authenticated" | "unauthorized";
 
 type AuthContextValue = {
   status: AuthStatus;
   session: StaffSession | null;
+  userId: string | null;
+  isAnonymous: boolean;
   initializationError: string | null;
+  ensureAnonymousSession: () => Promise<string>;
   signIn: (email: string, password: string, expectedRole: StaffRole) => Promise<StaffSession>;
   signOut: () => Promise<void>;
 };
@@ -49,9 +53,25 @@ async function sessionFromUser(user: User): Promise<StaffSession | null> {
   };
 }
 
+async function loadOfflineDesktopSession(user: User): Promise<StaffSession | null> {
+  if (navigator.onLine || !window.lighthouseDesktop) return null;
+  try {
+    const storedSession = await window.lighthouseDesktop.loadVerifiedSession();
+    return storedSession?.uid === user.uid ? storedSession : null;
+  } catch {
+    return null;
+  }
+}
+
+async function storeVerifiedDesktopSession(session: StaffSession) {
+  await window.lighthouseDesktop?.storeVerifiedSession(session).catch(() => false);
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [session, setSession] = useState<StaffSession | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [isAnonymous, setIsAnonymous] = useState(false);
   const [initializationError, setInitializationError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -69,9 +89,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!active) return;
         unsubscribe = onAuthStateChanged(auth, async (user) => {
           if (!active) return;
+          setUserId(user?.uid ?? null);
+          setIsAnonymous(Boolean(user?.isAnonymous));
+
           if (!user) {
             setSession(null);
             setStatus("signed-out");
+            return;
+          }
+
+          if (user.isAnonymous) {
+            setSession(null);
+            setStatus("guest");
             return;
           }
 
@@ -80,15 +109,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (!active) return;
             setSession(nextSession);
             setStatus(nextSession ? "authenticated" : "unauthorized");
+            if (nextSession) await storeVerifiedDesktopSession(nextSession);
           } catch {
+            const offlineSession = await loadOfflineDesktopSession(user);
             if (!active) return;
-            setSession(null);
-            setStatus("unauthorized");
+            setSession(offlineSession);
+            setStatus(offlineSession ? "authenticated" : "unauthorized");
           }
         });
 
-        // Subscribe first so signed-out routes remain responsive while a new
-        // Firebase project's Authentication service is being enabled.
         void setPersistence(auth, browserLocalPersistence).catch(() => undefined);
       })
       .catch(() => {
@@ -104,10 +133,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const ensureAnonymousSession = useCallback(async () => {
+    const {
+      browserLocalPersistence,
+      getAuth,
+      setPersistence,
+      signInAnonymously,
+    } = await import("firebase/auth");
+    const auth = getAuth(firebaseApp);
+    await setPersistence(auth, browserLocalPersistence);
+    if (auth.currentUser) return auth.currentUser.uid;
+
+    const credential = await signInAnonymously(auth);
+    setUserId(credential.user.uid);
+    setIsAnonymous(true);
+    setStatus("guest");
+    return credential.user.uid;
+  }, []);
+
   const value = useMemo<AuthContextValue>(() => ({
     status,
     session,
+    userId,
+    isAnonymous,
     initializationError,
+    ensureAnonymousSession,
     async signIn(email, password, expectedRole) {
       const {
         browserLocalPersistence,
@@ -137,17 +187,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         );
       }
 
+      await storeVerifiedDesktopSession(nextSession);
       setSession(nextSession);
+      setUserId(nextSession.uid);
+      setIsAnonymous(false);
       setStatus("authenticated");
       return nextSession;
     },
     async signOut() {
       const { getAuth, signOut: firebaseSignOut } = await import("firebase/auth");
-      await firebaseSignOut(getAuth(firebaseApp));
-      setSession(null);
-      setStatus("signed-out");
+      try {
+        await firebaseSignOut(getAuth(firebaseApp));
+      } finally {
+        await window.lighthouseDesktop?.clearVerifiedSession().catch(() => false);
+        setSession(null);
+        setUserId(null);
+        setIsAnonymous(false);
+        setStatus("signed-out");
+      }
     },
-  }), [initializationError, session, status]);
+  }), [ensureAnonymousSession, initializationError, isAnonymous, session, status, userId]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

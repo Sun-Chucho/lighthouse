@@ -16,8 +16,8 @@ import {
   getRoleHomePath,
   getRoleLoginPath,
   ROLE_CONFIG,
-  STAFF_ROLES,
   STAFF_PORTAL_PATH,
+  VISIBLE_STAFF_ROLES,
   type StaffRole,
 } from "../types/roles";
 
@@ -68,7 +68,7 @@ export function RoleLanding() {
               </AppLink>
             ) : null}
             <div className="portal-hero__facts">
-              <span><strong>6</strong> staff portals</span>
+              <span><strong>5</strong> staff portals</span>
               <span><strong>20</strong> configured rooms</span>
               <span><strong>0</strong> imported records</span>
             </div>
@@ -86,7 +86,7 @@ export function RoleLanding() {
           </div>
 
           <div className="portal-grid">
-            {STAFF_ROLES.map((role, index) => {
+            {VISIBLE_STAFF_ROLES.map((role, index) => {
               const config = ROLE_CONFIG[role];
               const Icon = ROLE_ICONS[role];
               const loginPath = getRoleLoginPath(role);
