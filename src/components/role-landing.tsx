@@ -17,6 +17,7 @@ import {
   getRoleLoginPath,
   ROLE_CONFIG,
   STAFF_ROLES,
+  STAFF_PORTAL_PATH,
   type StaffRole,
 } from "../types/roles";
 
@@ -35,7 +36,7 @@ export function RoleLanding() {
   return (
     <div className="portal-page">
       <header className="portal-topbar">
-        <AppLink className="portal-brand" href="/" aria-label="Lighthouse home">
+        <AppLink className="portal-brand" href={STAFF_PORTAL_PATH} aria-label="Lighthouse staff portals">
           <span className="portal-brand__logo">
             <img src="/logo.jpeg" alt="" width={52} height={52} />
           </span>

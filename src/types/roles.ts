@@ -9,6 +9,8 @@ export const STAFF_ROLES = [
 
 export type StaffRole = (typeof STAFF_ROLES)[number];
 
+export const STAFF_PORTAL_PATH = "/staff";
+
 export type RoleConfig = {
   slug: string;
   label: string;

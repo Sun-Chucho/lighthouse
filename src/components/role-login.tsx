@@ -20,6 +20,7 @@ import {
   getRoleHomePath,
   getRoleLoginPath,
   ROLE_CONFIG,
+  STAFF_PORTAL_PATH,
   type StaffRole,
 } from "../types/roles";
 
@@ -97,7 +98,7 @@ export function RoleLogin({ role }: { role: StaffRole }) {
       <section className="auth-visual">
         <div className="auth-visual__image" aria-hidden="true" />
         <div className="auth-visual__shade" />
-        <AppLink href="/" className="auth-brand">
+        <AppLink href={STAFF_PORTAL_PATH} className="auth-brand">
           <span><img src="/logo.jpeg" alt="" width={56} height={56} /></span>
           <div><strong>Lighthouse</strong><small>Lodge management</small></div>
         </AppLink>
@@ -115,7 +116,7 @@ export function RoleLogin({ role }: { role: StaffRole }) {
 
       <section className="auth-panel">
         <div className="auth-panel__inner">
-          <AppLink className="auth-back" href="/">
+          <AppLink className="auth-back" href={STAFF_PORTAL_PATH}>
             <ArrowLeft size={16} /> All staff portals
           </AppLink>
 

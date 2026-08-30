@@ -26,6 +26,7 @@ Room configuration lives in `src/data/rooms.ts`.
 
 | Portal | Login route | Dashboard route |
 | --- | --- | --- |
+| All staff portals | `/staff` | — |
 | Hotel Manager | `/manager` | `/manager/dashboard` |
 | Managing Director | `/md` | `/md/dashboard` |
 | Reception & Bookings | `/rb` | `/rb/dashboard` |
@@ -33,7 +34,7 @@ Room configuration lives in `src/data/rooms.ts`.
 | Kitchen Operations | `/kp` | `/kp/dashboard` |
 | Bar & POS | `/bp` | `/bp/dashboard` |
 
-The root route `/` is the staff portal directory. Protected routes require a Firebase Authentication user whose custom `role` claim matches the portal. No default usernames or passwords are stored in the frontend.
+The staff portal directory is available at `/staff`. The root route `/` redirects there. Protected routes require a Firebase Authentication user whose custom `role` claim matches the portal. No default usernames or passwords are stored in the frontend.
 
 ## Firebase
 

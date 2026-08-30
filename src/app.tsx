@@ -10,6 +10,7 @@ import {
   getRoleLoginPath,
   roleFromPathSegment,
   ROLE_CONFIG,
+  STAFF_PORTAL_PATH,
   type StaffRole,
 } from "./types/roles";
 
@@ -20,10 +21,11 @@ export function LighthouseApp() {
   const moduleSegment = segments[1];
 
   useEffect(() => {
-    if (pathname === "/") document.title = "Staff Login | Lighthouse Lodge";
+    if (pathname === STAFF_PORTAL_PATH) document.title = "Staff Login | Lighthouse Lodge";
   }, [pathname]);
 
-  if (pathname === "/") return <RoleLanding />;
+  if (pathname === "/") return <RootRedirect />;
+  if (pathname === STAFF_PORTAL_PATH) return <RoleLanding />;
   if (segments[0] === "dashboard") return <LegacyDashboardRedirect />;
 
   if (role && segments.length === 1) return <RoleLogin role={role} />;
@@ -33,6 +35,14 @@ export function LighthouseApp() {
   }
 
   return <NotFound />;
+}
+
+function RootRedirect() {
+  useEffect(() => {
+    window.location.replace(STAFF_PORTAL_PATH);
+  }, []);
+
+  return <LoadingScreen />;
 }
 
 function ProtectedWorkspace({ role, moduleId }: { role: StaffRole; moduleId: Parameters<typeof DashboardShell>[0]["moduleId"] }) {
@@ -92,7 +102,7 @@ function LegacyDashboardRedirect() {
       title="Choose your Lighthouse portal."
       description="The old shared dashboard route has been replaced with explicit role routes such as /manager, /rb, and /im."
       actionLabel="View staff portals"
-      actionHref="/"
+      actionHref={STAFF_PORTAL_PATH}
     />
   );
 }
@@ -123,7 +133,7 @@ function AccessNotice({
 }) {
   return (
     <main className="route-state route-state--card">
-      <AppLink href="/" className="route-state__brand"><img src="/logo.jpeg" alt="" width={54} height={54} /><span>Lighthouse</span></AppLink>
+      <AppLink href={STAFF_PORTAL_PATH} className="route-state__brand"><img src="/logo.jpeg" alt="" width={54} height={54} /><span>Lighthouse</span></AppLink>
       <section>
         <span className="route-state__icon"><Icon size={26} /></span>
         <p className="kicker">{eyebrow}</p>
@@ -138,13 +148,13 @@ function AccessNotice({
 function NotFound() {
   return (
     <main className="route-state route-state--card">
-      <AppLink href="/" className="route-state__brand"><img src="/logo.jpeg" alt="" width={54} height={54} /><span>Lighthouse</span></AppLink>
+      <AppLink href={STAFF_PORTAL_PATH} className="route-state__brand"><img src="/logo.jpeg" alt="" width={54} height={54} /><span>Lighthouse</span></AppLink>
       <section>
         <span className="route-state__code">404</span>
         <p className="kicker">Route not found</p>
         <h1>This Lighthouse page does not exist.</h1>
         <p>Use the staff directory to open a valid manager, reception, inventory, kitchen, bar, or director route.</p>
-        <AppLink href="/" className="auth-submit route-state__action"><ArrowLeft size={17} /> Return to staff portals</AppLink>
+        <AppLink href={STAFF_PORTAL_PATH} className="auth-submit route-state__action"><ArrowLeft size={17} /> Return to staff portals</AppLink>
       </section>
     </main>
   );
