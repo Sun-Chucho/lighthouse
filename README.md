@@ -8,9 +8,10 @@ A clean Lighthouse Lodge management foundation with a React frontend and Firebas
 - Dark brown, black, cream, and gold visual system
 - Responsive overview and room directory
 - 20 configured rooms split into Luxury and Classic categories
+- Dedicated login portals and protected dashboards for six staff roles
 - Firebase Web SDK with Firestore and browser-safe Analytics initialization
 - Firebase Admin SDK for trusted server-side Firestore access
-- Static Vite build for simple frontend hosting
+- Firebase Hosting rewrites for direct access to nested role URLs
 
 ## Room configuration
 
@@ -21,6 +22,19 @@ A clean Lighthouse Lodge management foundation with a React frontend and Firebas
 
 Room configuration lives in `src/data/rooms.ts`.
 
+## Staff routes
+
+| Portal | Login route | Dashboard route |
+| --- | --- | --- |
+| Hotel Manager | `/manager` | `/manager/dashboard` |
+| Managing Director | `/md` | `/md/dashboard` |
+| Reception & Bookings | `/rb` | `/rb/dashboard` |
+| Inventory Manager | `/im` | `/im/dashboard` |
+| Kitchen Operations | `/kp` | `/kp/dashboard` |
+| Bar & POS | `/bp` | `/bp/dashboard` |
+
+The root route `/` is the staff portal directory. Protected routes require a Firebase Authentication user whose custom `role` claim matches the portal. No default usernames or passwords are stored in the frontend.
+
 ## Firebase
 
 The browser integration is in `src/lib/firebase.ts`. Trusted server-side access is isolated in `server/firebase-admin.mjs`; never import that file into frontend code.
@@ -28,6 +42,14 @@ The browser integration is in `src/lib/firebase.ts`. Trusted server-side access 
 The local service-account key belongs at `firebase-service-account.json` in the repository root. That path and common service-account filename patterns are ignored by Git. A different local path can be supplied through `GOOGLE_APPLICATION_CREDENTIALS`.
 
 `firestore.rules` denies all browser reads and writes by default. Keep that baseline until Lighthouse authentication and per-role permissions are designed; trusted Admin SDK code is controlled through IAM instead.
+
+Enable Email/Password in Firebase Authentication before creating staff accounts. The Admin connection can be checked without changing users:
+
+```bash
+npm run firebase:verify-auth
+```
+
+Create or update a staff user locally by setting `LIGHTHOUSE_USER_EMAIL`, `LIGHTHOUSE_USER_PASSWORD`, `LIGHTHOUSE_USER_NAME`, and `LIGHTHOUSE_USER_ROLE`, then running `npm run firebase:create-user`. Valid claims are `manager`, `director`, `reception`, `inventory`, `kitchen`, and `bar`. The private service-account key stays server-side and is never bundled into the Vite frontend.
 
 Before the first database check, create the project's default Cloud Firestore database in the [Firebase console](https://console.firebase.google.com/project/lighthouse-bf85b/firestore). Choose its permanent location deliberately; the application does not make that infrastructure decision automatically.
 
@@ -53,6 +75,7 @@ Open [http://localhost:3000](http://localhost:3000).
 ```bash
 npm run typecheck
 npm run build
+npm run firebase:verify-auth
 npm run firebase:verify
 ```
 

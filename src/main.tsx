@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { LighthouseDashboard } from "./components/lighthouse-dashboard";
+import { LighthouseApp } from "./app";
+import { AuthProvider } from "./context/auth-context";
 import {
   initializeFirebaseAnalytics,
   initializeFirebaseFirestore,
@@ -18,6 +19,8 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <LighthouseDashboard />
+    <AuthProvider>
+      <LighthouseApp />
+    </AuthProvider>
   </StrictMode>,
 );

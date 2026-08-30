@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "firebase:create-user": "node scripts/manage-staff-user.mjs",
+    "firebase:verify-auth": "node scripts/verify-firebase-auth.mjs",
     "firebase:verify": "node scripts/verify-firebase-admin.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
