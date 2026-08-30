@@ -36,8 +36,30 @@ jobs:
         run: |
           $desktopVersion = "0.1.${{ github.run_number }}"
           npm version $desktopVersion --no-git-tag-version
+          "DESKTOP_VERSION=$desktopVersion" >> $env:GITHUB_ENV
 
-      - name: Build and publish Windows installer
-        run: npm run desktop:publish
+      - name: Build Windows installer
+        run: npm run desktop:pack
+
+      - name: Create version tag
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "v$env:DESKTOP_VERSION" $env:GITHUB_SHA
+          git push origin "v$env:DESKTOP_VERSION"
+
+      - name: Publish Windows release
+        shell: pwsh
+        run: |
+          $installer = "release/Lighthouse-Lodge-Setup-$env:DESKTOP_VERSION.exe"
+          gh release create "v$env:DESKTOP_VERSION" `
+            $installer `
+            "$installer.blockmap" `
+            "release/latest.yml" `
+            --repo "${{ github.repository }}" `
+            --title "Lighthouse Lodge $env:DESKTOP_VERSION" `
+            --generate-notes `
+            --verify-tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
