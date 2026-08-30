@@ -12,7 +12,7 @@ Lighthouse Lodge is an offline-first booking website and role-based staff applic
 - Twenty configured rooms split into Luxury and Classic categories
 - Five visible staff portals at `/staff`
 - Unlisted Managing Director login at `/login`
-- Firebase Email/Password staff authentication with role claims
+- Role-specific four-digit staff password access with no email field
 - Firebase Anonymous Authentication for public booking requests
 - Persistent Firestore cache and a durable local booking outbox
 - Installable Windows x64 NSIS application
@@ -32,7 +32,20 @@ Lighthouse Lodge is an offline-first booking website and role-based staff applic
 | Bar & POS | `/bp` | `/bp/dashboard` |
 | Managing Director, unlisted | `/login` | `/login/dashboard` |
 
-The Managing Director portal is intentionally omitted from `/staff`, but URL hiding is not its security boundary. Firebase custom role claims still protect the route. Logging out from any dashboard returns to `/staff`. The Windows application also starts at `/staff` on every launch.
+The Managing Director portal is intentionally omitted from `/staff` and remains available directly at `/login`. Logging out from any dashboard returns to `/staff`. The Windows application also starts at `/staff` on every launch.
+
+## Current role passwords
+
+| Role | Password |
+| --- | --- |
+| Hotel Manager | `4321` |
+| Reception & Bookings | `1234` |
+| Inventory Manager | `1234` |
+| Kitchen Operations | `1234` |
+| Bar & POS | `1234` |
+| Managing Director | `1234` |
+
+These shared PINs are deliberately implemented as requested for the current local/offline workflow. Because the application is publicly distributed, they are not a replacement for individual server-verified staff identities when sensitive operational data is added later.
 
 ## Room configuration
 
@@ -45,11 +58,11 @@ The canonical room list is in `src/data/rooms.ts`.
 
 ## Offline and synchronization behavior
 
-The Electron application serves the compiled UI from its own signed application bundle, so the staff directory, login screens, cached session, room catalogue, and previously cached Firestore data load without internet.
+The Electron application serves the compiled UI from its own application bundle, so the staff directory, PIN login screens, room catalogue, and previously cached Firestore data load without internet.
 
 Firestore uses persistent local caching. Public booking requests are first saved to a local outbox. If internet is unavailable, they remain on the device and are submitted automatically after connectivity returns. Firebase then synchronizes accepted changes with the cloud.
 
-A staff member must successfully authenticate online at least once before that same Windows account can reopen the verified session offline. The desktop copy of the last verified session is encrypted through Electron `safeStorage` on Windows and is cleared on logout. Account revocation and fresh password login still require internet, as expected.
+Staff PIN access does not require a network connection. Staff sessions remain in memory for the current application run and are cleared on logout; reopening the Windows application starts again at `/staff`.
 
 ## Firebase security
 
@@ -57,9 +70,9 @@ The client configuration is in `src/lib/firebase.ts`. Trusted Admin SDK code is 
 
 The service account belongs at `firebase-service-account.json` in the repository root. That path is ignored by Git and is not packaged into the Windows application.
 
-`firestore.rules` permits anonymous users to create and read only their own validated booking enquiries. Reception, Manager, and Director roles can operate those requests. All unspecified collections remain denied.
+`firestore.rules` permits anonymous users to create and read only their own validated booking enquiries. The rules retain claim-based staff permissions for the future server-backed staff-data phase. All unspecified collections remain denied.
 
-Create or update a staff user by setting `LIGHTHOUSE_USER_EMAIL`, `LIGHTHOUSE_USER_PASSWORD`, `LIGHTHOUSE_USER_NAME`, and `LIGHTHOUSE_USER_ROLE`, then run:
+The optional Firebase provisioning utility remains available for the future server-backed phase. Set `LIGHTHOUSE_USER_EMAIL`, `LIGHTHOUSE_USER_PASSWORD`, `LIGHTHOUSE_USER_NAME`, and `LIGHTHOUSE_USER_ROLE`, then run:
 
 ```bash
 npm run firebase:create-user

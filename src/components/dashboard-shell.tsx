@@ -160,7 +160,7 @@ const MODULE_COPY: Partial<Record<ModuleId, { eyebrow: string; title: string; de
   staff: {
     eyebrow: "Access management",
     title: "Staff & access",
-    description: "Firebase staff accounts and role claims will be managed here without legacy credentials.",
+    description: "Lighthouse role access is active with the current shared PIN configuration.",
     noun: "staff profiles",
   },
   reports: {
@@ -244,14 +244,14 @@ export function DashboardShell({ role, moduleId }: { role: StaffRole; moduleId: 
         <div className="system-card">
           <span className="system-card__icon"><ShieldCheck size={17} /></span>
           <div>
-            <p>Secure session</p>
-            <span>{config.shortLabel} role verified</span>
+            <p>Role session</p>
+            <span>{config.shortLabel} PIN verified</span>
           </div>
         </div>
 
         <div className="sidebar-session">
           <span className="sidebar-session__avatar">{config.initials}</span>
-          <span><strong>{session?.displayName || config.shortLabel}</strong><small>{session?.email}</small></span>
+          <span><strong>{session?.displayName || config.shortLabel}</strong><small>PIN access</small></span>
         </div>
         <button className="sidebar-logout" type="button" onClick={() => void handleLogout()}>
           <LogOut size={16} /> Exit session
@@ -342,7 +342,7 @@ function Overview({ role, navigation }: { role: StaffRole; navigation: Navigatio
           </div>
           <div className="readiness-list">
             <div><span className="readiness-dot readiness-dot--ready" /><p><strong>Role routes</strong><small>Restored and protected</small></p></div>
-            <div><span className="readiness-dot readiness-dot--ready" /><p><strong>Firebase Auth</strong><small>Client and claims wired</small></p></div>
+            <div><span className="readiness-dot readiness-dot--ready" /><p><strong>Staff PIN access</strong><small>Offline role login active</small></p></div>
             <div><span className="readiness-dot readiness-dot--ready" /><p><strong>Cloud Firestore</strong><small>Persistent offline sync active</small></p></div>
             <div><span className="readiness-dot" /><p><strong>Operational records</strong><small>Clean slate · 0 imported</small></p></div>
           </div>

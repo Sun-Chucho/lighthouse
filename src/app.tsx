@@ -67,7 +67,7 @@ function ProtectedWorkspace({ role, moduleId }: { role: StaffRole; moduleId: Par
         icon={ShieldAlert}
         eyebrow="Role boundary"
         title="This portal belongs to another role."
-        description={`You are authenticated as ${activeConfig.label}. Lighthouse does not allow that account to enter the ${config.label} workspace.`}
+        description={`You are signed in as ${activeConfig.label}. Lighthouse does not allow that role to enter the ${config.label} workspace.`}
         actionLabel={`Return to ${activeConfig.shortLabel}`}
         actionHref={getRoleHomePath(session.role)}
       />

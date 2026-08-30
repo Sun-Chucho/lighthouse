@@ -115,14 +115,14 @@ export function RoleLanding() {
           </div>
           <p>
             No legacy bookings, payments, drinks, menus, stock, transactions, or staff
-            credentials were imported into Lighthouse.
+            credentials were imported into Lighthouse. Current role passwords start clean.
           </p>
         </section>
       </main>
 
       <footer className="portal-footer">
         <span>Lighthouse Lodge</span>
-        <span>Firebase-secured staff system</span>
+        <span>Offline-ready staff PIN system</span>
       </footer>
     </div>
   );

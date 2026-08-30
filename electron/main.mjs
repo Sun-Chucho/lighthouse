@@ -66,7 +66,6 @@ function isSafeSession(value) {
     value
       && typeof value === "object"
       && typeof value.uid === "string"
-      && typeof value.email === "string"
       && typeof value.displayName === "string"
       && ["manager", "director", "reception", "inventory", "kitchen", "bar"].includes(value.role),
   );

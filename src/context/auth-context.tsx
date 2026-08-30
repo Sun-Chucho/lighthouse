@@ -1,33 +1,29 @@
-import type { User } from "firebase/auth";
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { firebaseApp } from "../lib/firebase";
-import { normalizeStaffRole, type StaffRole } from "../types/roles";
+import { ROLE_CONFIG, type StaffRole } from "../types/roles";
 
 export type StaffSession = {
   uid: string;
-  email: string;
   displayName: string;
   role: StaffRole;
 };
 
-type AuthStatus = "loading" | "signed-out" | "guest" | "authenticated" | "unauthorized";
+type AuthStatus = "loading" | "signed-out" | "guest" | "authenticated";
 
 type AuthContextValue = {
   status: AuthStatus;
   session: StaffSession | null;
-  userId: string | null;
-  isAnonymous: boolean;
-  initializationError: string | null;
   ensureAnonymousSession: () => Promise<string>;
-  signIn: (email: string, password: string, expectedRole: StaffRole) => Promise<StaffSession>;
+  signIn: (password: string, expectedRole: StaffRole) => Promise<StaffSession>;
   signOut: () => Promise<void>;
 };
 
@@ -40,39 +36,22 @@ export class StaffAuthError extends Error {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-async function sessionFromUser(user: User): Promise<StaffSession | null> {
-  const token = await user.getIdTokenResult();
-  const role = normalizeStaffRole(token.claims.role ?? token.claims.staffRole);
-  if (!role) return null;
-
+function localSessionForRole(role: StaffRole): StaffSession {
   return {
-    uid: user.uid,
-    email: user.email ?? "",
-    displayName: user.displayName || user.email?.split("@")[0] || "Lighthouse staff",
+    uid: `lighthouse-${role}`,
+    displayName: ROLE_CONFIG[role].label,
     role,
   };
 }
 
-async function loadOfflineDesktopSession(user: User): Promise<StaffSession | null> {
-  if (navigator.onLine || !window.lighthouseDesktop) return null;
-  try {
-    const storedSession = await window.lighthouseDesktop.loadVerifiedSession();
-    return storedSession?.uid === user.uid ? storedSession : null;
-  } catch {
-    return null;
-  }
-}
-
-async function storeVerifiedDesktopSession(session: StaffSession) {
-  await window.lighthouseDesktop?.storeVerifiedSession(session).catch(() => false);
+function passwordForRole(role: StaffRole) {
+  return role === "manager" ? "4321" : "1234";
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const [session, setSession] = useState<StaffSession | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [isAnonymous, setIsAnonymous] = useState(false);
-  const [initializationError, setInitializationError] = useState<string | null>(null);
+  const staffSessionRef = useRef<StaffSession | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -89,8 +68,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!active) return;
         unsubscribe = onAuthStateChanged(auth, async (user) => {
           if (!active) return;
-          setUserId(user?.uid ?? null);
-          setIsAnonymous(Boolean(user?.isAnonymous));
+
+          if (staffSessionRef.current) return;
 
           if (!user) {
             setSession(null);
@@ -104,25 +83,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return;
           }
 
-          try {
-            const nextSession = await sessionFromUser(user);
-            if (!active) return;
-            setSession(nextSession);
-            setStatus(nextSession ? "authenticated" : "unauthorized");
-            if (nextSession) await storeVerifiedDesktopSession(nextSession);
-          } catch {
-            const offlineSession = await loadOfflineDesktopSession(user);
-            if (!active) return;
-            setSession(offlineSession);
-            setStatus(offlineSession ? "authenticated" : "unauthorized");
-          }
+          // Email accounts from the earlier access model no longer unlock staff
+          // routes. Staff access is deliberately selected by role and PIN.
+          setSession(null);
+          setStatus("signed-out");
         });
 
         void setPersistence(auth, browserLocalPersistence).catch(() => undefined);
       })
       .catch(() => {
         if (!active) return;
-        setInitializationError("Firebase Authentication could not be initialized.");
         setStatus("signed-out");
       });
 
@@ -142,71 +112,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = await import("firebase/auth");
     const auth = getAuth(firebaseApp);
     await setPersistence(auth, browserLocalPersistence);
-    if (auth.currentUser) return auth.currentUser.uid;
+    if (auth.currentUser?.isAnonymous) return auth.currentUser.uid;
 
     const credential = await signInAnonymously(auth);
-    setUserId(credential.user.uid);
-    setIsAnonymous(true);
-    setStatus("guest");
+    if (!staffSessionRef.current) setStatus("guest");
     return credential.user.uid;
   }, []);
 
   const value = useMemo<AuthContextValue>(() => ({
     status,
     session,
-    userId,
-    isAnonymous,
-    initializationError,
     ensureAnonymousSession,
-    async signIn(email, password, expectedRole) {
-      const {
-        browserLocalPersistence,
-        getAuth,
-        setPersistence,
-        signInWithEmailAndPassword,
-        signOut: firebaseSignOut,
-      } = await import("firebase/auth");
-      const auth = getAuth(firebaseApp);
-      await setPersistence(auth, browserLocalPersistence);
-      const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
-      const nextSession = await sessionFromUser(credential.user);
-
-      if (!nextSession) {
-        await firebaseSignOut(auth);
-        throw new StaffAuthError(
-          "auth/missing-role",
-          "This Firebase account does not have a Lighthouse staff role.",
-        );
+    async signIn(password, expectedRole) {
+      if (password !== passwordForRole(expectedRole)) {
+        throw new StaffAuthError("auth/invalid-pin", "Incorrect password for this staff role.");
       }
 
-      if (nextSession.role !== expectedRole) {
-        await firebaseSignOut(auth);
-        throw new StaffAuthError(
-          "auth/wrong-role",
-          `This account belongs to the ${nextSession.role} portal.`,
-        );
-      }
-
-      await storeVerifiedDesktopSession(nextSession);
+      const nextSession = localSessionForRole(expectedRole);
+      staffSessionRef.current = nextSession;
       setSession(nextSession);
-      setUserId(nextSession.uid);
-      setIsAnonymous(false);
       setStatus("authenticated");
       return nextSession;
     },
     async signOut() {
-      const { getAuth, signOut: firebaseSignOut } = await import("firebase/auth");
+      staffSessionRef.current = null;
       try {
+        const { getAuth, signOut: firebaseSignOut } = await import("firebase/auth");
         await firebaseSignOut(getAuth(firebaseApp));
+      } catch {
+        // Local PIN sign-out must remain available without a network connection.
       } finally {
         await window.lighthouseDesktop?.clearVerifiedSession().catch(() => false);
         setSession(null);
-        setUserId(null);
-        setIsAnonymous(false);
         setStatus("signed-out");
       }
     },
-  }), [ensureAnonymousSession, initializationError, isAnonymous, session, status, userId]);
+  }), [ensureAnonymousSession, session, status]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

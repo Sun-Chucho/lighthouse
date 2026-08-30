@@ -8,7 +8,6 @@ import {
   Eye,
   EyeOff,
   LockKeyhole,
-  Mail,
   Martini,
   ShieldCheck,
   type LucideIcon,
@@ -35,34 +34,13 @@ const ROLE_ICONS: Record<StaffRole, LucideIcon> = {
 
 function authenticationMessage(error: unknown) {
   if (error instanceof StaffAuthError) return error.message;
-  const code = typeof error === "object" && error && "code" in error
-    ? String(error.code)
-    : "";
-
-  if (code === "auth/invalid-credential" || code === "auth/user-not-found" || code === "auth/wrong-password") {
-    return "The email or password is incorrect.";
-  }
-  if (code === "auth/operation-not-allowed") {
-    return "Email/password sign-in is not enabled in the Lighthouse Firebase project yet.";
-  }
-  if (code === "auth/configuration-not-found") {
-    return "Firebase Authentication has not been initialized for Lighthouse yet.";
-  }
-  if (code === "auth/too-many-requests") {
-    return "Sign-in is temporarily limited after too many attempts. Please try again later.";
-  }
-  if (code === "auth/network-request-failed") {
-    return "The login service could not be reached. Check your connection and try again.";
-  }
-
-  return "Sign-in could not be completed. Check the account and try again.";
+  return "Sign-in could not be completed. Try the role password again.";
 }
 
 export function RoleLogin({ role }: { role: StaffRole }) {
   const config = ROLE_CONFIG[role];
   const Icon = ROLE_ICONS[role];
-  const { initializationError, session, signIn, status } = useAuth();
-  const [email, setEmail] = useState("");
+  const { session, signIn, status } = useAuth();
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
@@ -84,7 +62,7 @@ export function RoleLogin({ role }: { role: StaffRole }) {
     setSubmitting(true);
 
     try {
-      await signIn(email, password, role);
+      await signIn(password, role);
       navigateTo(getRoleHomePath(role), { replace: true });
     } catch (signInError) {
       setError(authenticationMessage(signInError));
@@ -121,39 +99,31 @@ export function RoleLogin({ role }: { role: StaffRole }) {
           </AppLink>
 
           <div className="auth-heading">
-            <span className="auth-heading__icon"><Icon size={25} strokeWidth={1.7} /></span>
+            <div className="auth-avatar" aria-label={`${config.label} profile`}>
+              <span>{config.initials}</span>
+              <i><Icon size={15} strokeWidth={1.8} /></i>
+            </div>
             <p className="kicker">{config.shortLabel} access</p>
             <h2>Welcome back.</h2>
-            <p>Sign in with the Firebase account assigned to this Lighthouse role.</p>
+            <p>Enter the four-digit password assigned to the {config.shortLabel} role. No email address is required.</p>
           </div>
 
           <form className="auth-form" onSubmit={handleSubmit}>
             <label className="auth-field">
-              <span>Email address</span>
-              <span className="auth-input-wrap">
-                <Mail size={17} />
-                <input
-                  type="email"
-                  autoComplete="username"
-                  required
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  placeholder="name@lighthouse.co.tz"
-                />
-              </span>
-            </label>
-
-            <label className="auth-field">
-              <span>Password</span>
+              <span>Role password</span>
               <span className="auth-input-wrap">
                 <LockKeyhole size={17} />
                 <input
                   type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
+                  inputMode="numeric"
+                  pattern="[0-9]{4}"
+                  maxLength={4}
                   required
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="Enter your password"
+                  onChange={(event) => setPassword(event.target.value.replace(/\D/g, "").slice(0, 4))}
+                  placeholder="Enter 4-digit password"
+                  aria-describedby="role-password-help"
                 />
                 <button
                   className="auth-password-toggle"
@@ -166,11 +136,11 @@ export function RoleLogin({ role }: { role: StaffRole }) {
               </span>
             </label>
 
-            {(error || initializationError) ? (
-              <p className="auth-error" role="alert">{error || initializationError}</p>
+            {error ? (
+              <p className="auth-error" role="alert">{error}</p>
             ) : null}
 
-            <button className="auth-submit" type="submit" disabled={submitting || status === "loading"}>
+            <button className="auth-submit" type="submit" disabled={submitting || password.length !== 4}>
               {submitting ? "Signing in…" : "Sign in securely"}
               {!submitting ? <ArrowRight size={17} /> : null}
             </button>
@@ -178,7 +148,7 @@ export function RoleLogin({ role }: { role: StaffRole }) {
 
           <div className="auth-security-note">
             <ShieldCheck size={18} />
-            <p><strong>Role protected</strong><span>Only accounts carrying the {role} role claim can enter this portal.</span></p>
+            <p id="role-password-help"><strong>Offline role access</strong><span>This password works on the Lighthouse Windows application with or without internet.</span></p>
           </div>
         </div>
       </section>
