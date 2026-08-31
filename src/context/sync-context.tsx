@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { useAuth } from "./auth-context";
-import { initializeFirebaseFirestore } from "../lib/firebase";
+import { firebaseApp } from "../lib/firebase";
 
 export type BookingInquiryInput = {
   guestName: string;
@@ -18,7 +18,7 @@ export type BookingInquiryInput = {
   checkIn: string;
   checkOut: string;
   guests: number;
-  roomType: "luxury" | "classic" | "either";
+  roomType: "luxury" | "classic";
   note: string;
 };
 
@@ -54,7 +54,7 @@ function readOutbox(): QueuedBookingInquiry[] {
       && typeof item.checkIn === "string"
       && typeof item.checkOut === "string"
       && typeof item.guests === "number"
-      && ["luxury", "classic", "either"].includes(item.roomType)
+      && ["luxury", "classic"].includes(item.roomType)
       && typeof item.note === "string"
     ));
   } catch {
@@ -96,31 +96,38 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     setLastError(null);
 
     try {
-      const guestUid = await ensureAnonymousSession();
-      const database = await initializeFirebaseFirestore();
-      const { doc, serverTimestamp, setDoc, waitForPendingWrites } = await import("firebase/firestore");
+      await ensureAnonymousSession();
+      const { getAuth } = await import("firebase/auth");
+      const idToken = await getAuth(firebaseApp).currentUser?.getIdToken();
+      if (!idToken) throw new Error("Guest authentication is unavailable.");
       for (const inquiry of queued) {
-        await setDoc(doc(database, "bookingEnquiries", inquiry.id), {
-          guestUid,
-          guestName: inquiry.guestName,
+        const response = await fetch("/api/bookings", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${idToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+          fullName: inquiry.guestName,
           email: inquiry.email,
           phone: inquiry.phone,
           checkIn: inquiry.checkIn,
           checkOut: inquiry.checkOut,
           guests: inquiry.guests,
           roomType: inquiry.roomType,
-          note: inquiry.note,
-          status: "pending",
-          source: window.lighthouseDesktop ? "windows" : "web",
-          clientCreatedAt: inquiry.queuedAt,
-          createdAt: serverTimestamp(),
+          specialRequest: inquiry.note,
+          formStartedAt: new Date(inquiry.queuedAt).getTime() - 5_000,
+          checkoutAction: "reservation",
+          }),
         });
+        if (!response.ok) {
+          const result = await response.json().catch(() => ({})) as { error?: string };
+          throw new Error(result.error ?? `Booking sync failed (${response.status}).`);
+        }
         const remaining = readOutbox().filter((item) => item.id !== inquiry.id);
         writeOutbox(remaining);
         setPendingCount(remaining.length);
       }
-
-      await waitForPendingWrites(database);
       setStatus("online");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -132,11 +139,6 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   }, [ensureAnonymousSession]);
 
   useEffect(() => {
-    void initializeFirebaseFirestore().catch((error) => {
-      setLastError(error instanceof Error ? error.message : String(error));
-      setStatus(navigator.onLine ? "error" : "offline");
-    });
-
     const handleOnline = () => {
       setStatus("online");
       void flushOutbox();

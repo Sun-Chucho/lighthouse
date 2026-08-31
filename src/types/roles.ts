@@ -73,28 +73,17 @@ export const ROLE_CONFIG: Record<StaffRole, RoleConfig> = {
 
 const ROLE_ALIASES: Record<string, StaffRole> = {
   manager: "manager",
-  smanager: "manager",
-  pmanager: "manager",
-  md: "director",
   director: "director",
   im: "inventory",
   inventory: "inventory",
-  sim: "inventory",
-  pim: "inventory",
   rb: "reception",
   reception: "reception",
   receptionist: "reception",
-  srb: "reception",
-  prb: "reception",
   kp: "kitchen",
   kitchen: "kitchen",
-  skit: "kitchen",
-  pkit: "kitchen",
   bp: "bar",
   bar: "bar",
   barista: "bar",
-  sbar: "bar",
-  pbar: "bar",
 };
 
 export function normalizeStaffRole(value: unknown): StaffRole | null {

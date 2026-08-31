@@ -1,0 +1,1444 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { InventoryItem } from "@/app/lib/mock-data";
+import { MainStoreItem, STORAGE_INVENTORY_ITEMS, STORAGE_MAIN_STORE_ITEMS } from "@/app/lib/inventory-transfer";
+import {
+  KitchenDailyStockHistoryEntry,
+  KitchenDailyStockLine,
+  KitchenDailyStockSession,
+  KitchenPurchaseHistoryEntry,
+  KitchenPurchaseLine,
+  KitchenPurchaseSession,
+  KitchenSessionSignoff,
+  STORAGE_KITCHEN_DAILY_STOCK_HISTORY,
+  STORAGE_KITCHEN_DAILY_STOCK_SESSION,
+  STORAGE_KITCHEN_PURCHASE_HISTORY,
+  STORAGE_KITCHEN_PURCHASE_SESSION,
+  STORAGE_BARISTA_DAILY_STOCK_HISTORY,
+  STORAGE_BARISTA_DAILY_STOCK_SESSION,
+  STORAGE_BARISTA_PURCHASE_HISTORY,
+  STORAGE_BARISTA_PURCHASE_SESSION,
+} from "@/app/lib/kitchen-session-storage";
+import { readJson, writeJson } from "@/app/lib/storage";
+import { subscribeToSyncedStorageKey } from "@/app/lib/firebase-sync";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/hooks/use-toast";
+import { Download, Eye } from "lucide-react";
+
+type KitchenWorkflowTab = "purchase" | "daily-stock";
+type CloseTarget = "purchase" | "daily-stock" | null;
+type SessionDepartment = "kitchen" | "barista";
+type HistoryPreviewState =
+  | { kind: "purchase"; entry: KitchenPurchaseHistoryEntry }
+  | { kind: "daily-stock"; entry: KitchenDailyStockHistoryEntry }
+  | null;
+
+const DEFAULT_SIGNOFF: KitchenSessionSignoff = {
+  preparedBy: "",
+  checkedBy: "",
+  approvedBy: "",
+  cashier: "",
+};
+
+function roundStock(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Number(value.toFixed(2)));
+}
+
+function asNumber(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function NumericInput({ value, onChange, ...props }: any) {
+  const [draft, setDraft] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (draft !== null && asNumber(draft) === Number(value)) {
+      // Keep draft
+    } else {
+      setDraft(null);
+    }
+  }, [value, draft]);
+
+  return (
+    <Input
+      {...props}
+      type="number"
+      value={draft !== null ? draft : (value === 0 && draft !== "0" ? "" : String(value))}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        if (onChange) onChange(e);
+      }}
+      onBlur={(e) => {
+        setDraft(null);
+        if (props.onBlur) props.onBlur(e);
+      }}
+    />
+  );
+}
+
+function createPurchaseLine(item?: MainStoreItem): KitchenPurchaseLine {
+  return {
+    id: `purchase-line-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    itemId: item?.id ?? null,
+    itemName: item?.name ?? "",
+    category: item?.subCategory ?? "",
+    unit: item?.unit ?? "kg",
+    previousBalance: roundStock(item?.stock ?? 0),
+    addedQty: 0,
+    pricePerUnit: roundStock(item?.buyingPrice ?? 0),
+  };
+}
+
+function createDailyLine(item?: MainStoreItem): KitchenDailyStockLine {
+  return {
+    id: `daily-line-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    itemId: item?.id ?? null,
+    itemName: item?.name ?? "",
+    category: item?.subCategory ?? "",
+    unit: item?.unit ?? "kg",
+    openingStock: roundStock(item?.stock ?? 0),
+    received: 0,
+    used: 0,
+    wastage: 0,
+  };
+}
+
+function formatMoney(value: number) {
+  return `TSh ${Math.round(value).toLocaleString()}`;
+}
+
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString();
+}
+
+function getLocalDateInputValue(value: Date = new Date()) {
+  const offsetMs = value.getTimezoneOffset() * 60_000;
+  return new Date(value.getTime() - offsetMs).toISOString().slice(0, 10);
+}
+
+function getDateInputValue(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return getLocalDateInputValue();
+  return getLocalDateInputValue(parsed);
+}
+
+function getTimeInputValue(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return new Date().toTimeString().slice(0, 5);
+  return parsed.toTimeString().slice(0, 5);
+}
+
+function combineDateAndTime(dateValue: string, timeValue: string) {
+  const safeDate = dateValue || getLocalDateInputValue();
+  const safeTime = timeValue || "23:59";
+  const combined = new Date(`${safeDate}T${safeTime}:00`);
+  if (Number.isNaN(combined.getTime())) {
+    return new Date().toISOString();
+  }
+  return combined.toISOString();
+}
+
+function getWorkflowCopy(tab: KitchenWorkflowTab, department: SessionDepartment) {
+  const departmentLabel = department === "kitchen" ? "Kitchen" : "Barista";
+  if (tab === "purchase") {
+    return {
+      tabLabel: "Daily Purchases",
+      title: `${departmentLabel} Daily Purchase Entries`,
+      empty: "Open shift to begin entering daily purchase rows.",
+      success: `${departmentLabel} purchase entries saved`,
+      active: "Shift Open Since",
+      inactive: "Shift Closed",
+      openButton: "Open Shift",
+      closeButton: "Close Shift",
+      dialogTitle: `Close ${departmentLabel} Purchase Shift`,
+    };
+  }
+
+  return {
+    tabLabel: "Daily Entries",
+    title: `${departmentLabel} Daily Stock Entries`,
+    empty: "Open shift to begin entering the day's stock movement.",
+    success: `${departmentLabel} daily entries saved`,
+    active: "Shift Open Since",
+    inactive: "Shift Closed",
+    openButton: "Open Shift",
+    closeButton: "Close Shift",
+    dialogTitle: `Close ${departmentLabel} Daily Entries Shift`,
+  };
+}
+
+function getInventoryMatch(inventoryItems: InventoryItem[], storeItem: MainStoreItem) {
+  return inventoryItems.find(
+    (entry) =>
+      entry.category === (storeItem.lane === "barista" ? "Bar" : "Kitchen") &&
+      entry.name === storeItem.name &&
+      (entry.size ?? "") === (storeItem.size ?? ""),
+  );
+}
+
+function getPurchaseLineTotalBalance(line: KitchenPurchaseLine) {
+  return roundStock(line.previousBalance + line.addedQty);
+}
+
+function getPurchaseEntryAmount(entry: KitchenPurchaseHistoryEntry) {
+  return roundStock(entry.lines.reduce((sum, line) => sum + line.addedQty * line.pricePerUnit, 0));
+}
+
+function getDailyLineClosingStock(line: KitchenDailyStockLine) {
+  return roundStock(line.openingStock + line.received - line.used - line.wastage);
+}
+
+function getDailyEntryTotals(entry: KitchenDailyStockHistoryEntry) {
+  return entry.lines.reduce(
+    (acc, line) => {
+      acc.received += roundStock(line.received);
+      acc.used += roundStock(line.used);
+      acc.wastage += roundStock(line.wastage);
+      return acc;
+    },
+    { received: 0, used: 0, wastage: 0 },
+  );
+}
+
+function matchesSessionSearch(values: Array<string | number | null | undefined>, searchTerm: string) {
+  const tokens = searchTerm.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+
+  const haystack = values
+    .filter((value) => value !== undefined && value !== null)
+    .join(" ")
+    .toLowerCase();
+
+  return tokens.every((token) => haystack.includes(token));
+}
+
+function escapeCsvValue(value: string | number | null | undefined) {
+  const text = String(value ?? "");
+  if (/[",\n]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function getHistoryFileDate(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "record";
+  return parsed.toISOString().slice(0, 10);
+}
+
+function downloadCsvFile(filename: string, rows: Array<Array<string | number | null | undefined>>) {
+  if (typeof window === "undefined") return;
+
+  const csvContent = rows.map((row) => row.map((value) => escapeCsvValue(value)).join(",")).join("\n");
+  const blob = new Blob(["\ufeff", csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+}
+
+export function KitchenSessionManager({
+  isDirector,
+  department = "kitchen",
+  externalSearchTerm = "",
+  visibleTabs,
+}: {
+  isDirector: boolean;
+  department?: SessionDepartment;
+  externalSearchTerm?: string;
+  visibleTabs?: KitchenWorkflowTab[];
+}) {
+  const [activeTab, setActiveTab] = useState<KitchenWorkflowTab>("purchase");
+  const [storeItems, setStoreItems] = useState<MainStoreItem[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+  const [purchaseSession, setPurchaseSession] = useState<KitchenPurchaseSession | null>(null);
+  const [dailySession, setDailySession] = useState<KitchenDailyStockSession | null>(null);
+  const [purchaseHistory, setPurchaseHistory] = useState<KitchenPurchaseHistoryEntry[]>([]);
+  const [dailyHistory, setDailyHistory] = useState<KitchenDailyStockHistoryEntry[]>([]);
+  const [closeTarget, setCloseTarget] = useState<CloseTarget>(null);
+  const [historyPreview, setHistoryPreview] = useState<HistoryPreviewState>(null);
+  const [closeNotes, setCloseNotes] = useState(DEFAULT_SIGNOFF);
+  const [closeDate, setCloseDate] = useState(() => getLocalDateInputValue());
+  const [closeTime, setCloseTime] = useState(new Date().toTimeString().slice(0, 5));
+  const [purchaseSearch, setPurchaseSearch] = useState("");
+  const purchaseCopy = getWorkflowCopy("purchase", department);
+  const dailyCopy = getWorkflowCopy("daily-stock", department);
+  const departmentLabel = department === "kitchen" ? "Kitchen" : "Barista";
+  const departmentCategory = department === "kitchen" ? "Kitchen" : "Bar";
+  const isBaristaDepartment = department === "barista";
+  const availableTabs = useMemo<KitchenWorkflowTab[]>(
+    () => visibleTabs ?? (isBaristaDepartment ? ["purchase"] : ["purchase", "daily-stock"]),
+    [isBaristaDepartment, visibleTabs],
+  );
+  const visibleActiveTab = availableTabs.includes(activeTab) ? activeTab : availableTabs[0] ?? "purchase";
+  const purchaseSessionKey =
+    department === "kitchen" ? STORAGE_KITCHEN_PURCHASE_SESSION : STORAGE_BARISTA_PURCHASE_SESSION;
+  const purchaseHistoryKey =
+    department === "kitchen" ? STORAGE_KITCHEN_PURCHASE_HISTORY : STORAGE_BARISTA_PURCHASE_HISTORY;
+  const dailySessionKey =
+    department === "kitchen" ? STORAGE_KITCHEN_DAILY_STOCK_SESSION : STORAGE_BARISTA_DAILY_STOCK_SESSION;
+  const dailyHistoryKey =
+    department === "kitchen" ? STORAGE_KITCHEN_DAILY_STOCK_HISTORY : STORAGE_BARISTA_DAILY_STOCK_HISTORY;
+
+  useEffect(() => {
+    const applySnapshot = () => {
+      const allStore = readJson<MainStoreItem[]>(STORAGE_MAIN_STORE_ITEMS) ?? [];
+      setStoreItems(allStore.filter((item) => item.lane === department));
+      setInventoryItems(readJson<InventoryItem[]>(STORAGE_INVENTORY_ITEMS) ?? []);
+      setPurchaseSession(readJson<KitchenPurchaseSession>(purchaseSessionKey));
+      setDailySession(readJson<KitchenDailyStockSession>(dailySessionKey));
+      setPurchaseHistory(readJson<KitchenPurchaseHistoryEntry[]>(purchaseHistoryKey) ?? []);
+      setDailyHistory(readJson<KitchenDailyStockHistoryEntry[]>(dailyHistoryKey) ?? []);
+    };
+
+    applySnapshot();
+    const unsubscribers = [
+      subscribeToSyncedStorageKey(STORAGE_MAIN_STORE_ITEMS, applySnapshot),
+      subscribeToSyncedStorageKey(STORAGE_INVENTORY_ITEMS, applySnapshot),
+      subscribeToSyncedStorageKey(purchaseSessionKey, applySnapshot),
+      subscribeToSyncedStorageKey(purchaseHistoryKey, applySnapshot),
+      subscribeToSyncedStorageKey(dailySessionKey, applySnapshot),
+      subscribeToSyncedStorageKey(dailyHistoryKey, applySnapshot),
+    ];
+
+    return () => {
+      unsubscribers.forEach((unsubscribe) => unsubscribe());
+    };
+  }, [dailyHistoryKey, dailySessionKey, department, purchaseHistoryKey, purchaseSessionKey]);
+
+  useEffect(() => {
+    if (!availableTabs.includes(activeTab)) {
+      setActiveTab(availableTabs[0] ?? "purchase");
+    }
+  }, [activeTab, availableTabs]);
+
+  const purchaseTotalAmount = useMemo(
+    () =>
+      (purchaseSession?.lines ?? []).reduce(
+        (sum, line) => sum + roundStock(line.addedQty) * roundStock(line.pricePerUnit),
+        0,
+      ),
+    [purchaseSession],
+  );
+  const filteredPurchaseLines = useMemo(() => {
+    const query = [externalSearchTerm, purchaseSearch].filter(Boolean).join(" ");
+    const lines = purchaseSession?.lines ?? [];
+
+    return lines.filter((line) =>
+      matchesSessionSearch(
+        [line.itemName, line.category, line.unit, line.previousBalance, line.addedQty, line.pricePerUnit],
+        query,
+      ),
+    );
+  }, [externalSearchTerm, purchaseSearch, purchaseSession]);
+
+  const filteredDailyLines = useMemo(() => {
+    const query = externalSearchTerm;
+    const lines = dailySession?.lines ?? [];
+
+    return lines.filter((line) =>
+      matchesSessionSearch(
+        [line.itemName, line.category, line.unit, line.openingStock, line.received, line.used, line.wastage],
+        query,
+      ),
+    );
+  }, [dailySession, externalSearchTerm]);
+
+  const filteredPurchaseHistory = useMemo(
+    () =>
+      purchaseHistory.filter((entry) =>
+        matchesSessionSearch(
+          [
+            entry.closedAt,
+            entry.signoff.preparedBy,
+            entry.signoff.checkedBy,
+            entry.signoff.approvedBy,
+            entry.signoff.cashier,
+            entry.lines.length,
+            getPurchaseEntryAmount(entry),
+            ...entry.lines.flatMap((line) => [line.itemName, line.category, line.unit, line.addedQty, line.pricePerUnit]),
+          ],
+          externalSearchTerm,
+        ),
+      ),
+    [externalSearchTerm, purchaseHistory],
+  );
+
+  const filteredDailyHistory = useMemo(
+    () =>
+      dailyHistory.filter((entry) =>
+        matchesSessionSearch(
+          [
+            entry.closedAt,
+            entry.signoff.preparedBy,
+            entry.signoff.checkedBy,
+            entry.signoff.approvedBy,
+            entry.signoff.cashier,
+            entry.lines.length,
+            ...entry.lines.flatMap((line) => [line.itemName, line.category, line.unit, line.openingStock, line.received, line.used, line.wastage]),
+          ],
+          externalSearchTerm,
+        ),
+      ),
+    [dailyHistory, externalSearchTerm],
+  );
+
+  const dailyTotals = useMemo(() => {
+    return (dailySession?.lines ?? []).reduce(
+      (acc, line) => {
+        acc.received += roundStock(line.received);
+        acc.used += roundStock(line.used);
+        acc.wastage += roundStock(line.wastage);
+        return acc;
+      },
+      { received: 0, used: 0, wastage: 0 },
+    );
+  }, [dailySession]);
+
+  const persistPurchaseSession = (next: KitchenPurchaseSession | null) => {
+    setPurchaseSession(next);
+    writeJson(purchaseSessionKey, next);
+  };
+
+  const persistDailySession = (next: KitchenDailyStockSession | null) => {
+    setDailySession(next);
+    writeJson(dailySessionKey, next);
+  };
+
+  const startPurchaseSession = () => {
+    if (isDirector || purchaseSession) return;
+    const next: KitchenPurchaseSession = {
+      id: `purchase-session-${Date.now()}`,
+      startedAt: new Date().toISOString(),
+      lines: storeItems.map((item) => createPurchaseLine(item)),
+    };
+    persistPurchaseSession(next);
+    toast({ title: `${departmentLabel} purchase session started` });
+  };
+
+  const startDailySession = () => {
+    if (isDirector || dailySession) return;
+    const next: KitchenDailyStockSession = {
+      id: `daily-session-${Date.now()}`,
+      startedAt: new Date().toISOString(),
+      lines: storeItems.map((item) => createDailyLine(item)),
+    };
+    persistDailySession(next);
+    toast({ title: `${departmentLabel} daily stock sheet started` });
+  };
+
+  const updatePurchaseLine = (lineId: string, field: keyof KitchenPurchaseLine, value: string) => {
+    if (!purchaseSession) return;
+    persistPurchaseSession({
+      ...purchaseSession,
+      lines: purchaseSession.lines.map((line) =>
+        line.id === lineId
+          ? {
+              ...line,
+              [field]:
+                field === "itemName" || field === "category" || field === "unit"
+                  ? value
+                  : roundStock(asNumber(value)),
+            }
+          : line,
+      ),
+    });
+  };
+
+  const updateDailyLine = (lineId: string, field: keyof KitchenDailyStockLine, value: string) => {
+    if (!dailySession) return;
+    persistDailySession({
+      ...dailySession,
+      lines: dailySession.lines.map((line) =>
+        line.id === lineId
+          ? {
+              ...line,
+              [field]:
+                field === "itemName" || field === "category" || field === "unit"
+                  ? value
+                  : roundStock(asNumber(value)),
+            }
+          : line,
+      ),
+    });
+  };
+
+  const addPurchaseLine = () => {
+    if (!purchaseSession || isDirector) return;
+    persistPurchaseSession({ ...purchaseSession, lines: [...purchaseSession.lines, createPurchaseLine()] });
+  };
+
+  const addDailyLine = () => {
+    if (!dailySession || isDirector) return;
+    persistDailySession({ ...dailySession, lines: [...dailySession.lines, createDailyLine()] });
+  };
+
+  const removePurchaseLine = (lineId: string) => {
+    if (!purchaseSession || isDirector) return;
+    persistPurchaseSession({ ...purchaseSession, lines: purchaseSession.lines.filter((line) => line.id !== lineId) });
+  };
+
+  const removeDailyLine = (lineId: string) => {
+    if (!dailySession || isDirector) return;
+    persistDailySession({ ...dailySession, lines: dailySession.lines.filter((line) => line.id !== lineId) });
+  };
+
+  const openCloseDialog = (target: Exclude<CloseTarget, null>) => {
+    if (isDirector) return;
+    const sourceTimestamp = target === "purchase" ? purchaseSession?.startedAt : dailySession?.startedAt;
+    setCloseNotes(DEFAULT_SIGNOFF);
+    setCloseDate(getDateInputValue(sourceTimestamp ?? new Date().toISOString()));
+    setCloseTime(getTimeInputValue(new Date().toISOString()));
+    setCloseTarget(target);
+  };
+
+  const applyStoreAndInventoryChanges = (nextKitchenStore: MainStoreItem[], nextInventory: InventoryItem[]) => {
+    const allStore = readJson<MainStoreItem[]>(STORAGE_MAIN_STORE_ITEMS) ?? [];
+    const otherDepartmentStore = allStore.filter((item) => item.lane !== department);
+    writeJson(STORAGE_MAIN_STORE_ITEMS, [...otherDepartmentStore, ...nextKitchenStore]);
+    writeJson(STORAGE_INVENTORY_ITEMS, nextInventory);
+  };
+
+  const closePurchaseSession = () => {
+    if (!purchaseSession) return;
+    const closedAt = combineDateAndTime(closeDate, closeTime);
+
+    const validLines = purchaseSession.lines.filter((line) => line.itemName.trim().length > 0);
+    if (validLines.length === 0) {
+      toast({ title: "No purchase rows to save", variant: "destructive" });
+      return;
+    }
+
+    let nextKitchenStore = [...storeItems];
+    let nextInventory = [...inventoryItems];
+
+    validLines.forEach((line) => {
+      const totalBalance = roundStock(line.previousBalance + line.addedQty);
+      const existingStore = line.itemId ? nextKitchenStore.find((item) => item.id === line.itemId) : null;
+
+      if (existingStore) {
+        nextKitchenStore = nextKitchenStore.map((item) =>
+          item.id === existingStore.id
+            ? {
+                ...item,
+                name: line.itemName.trim(),
+                subCategory: line.category.trim(),
+                unit: line.unit.trim() || item.unit,
+                stock: totalBalance,
+                buyingPrice: line.pricePerUnit > 0 ? line.pricePerUnit : item.buyingPrice,
+                receivedStock: roundStock((item.receivedStock ?? 0) + line.addedQty),
+              }
+            : item,
+        );
+
+        const refreshedStore = nextKitchenStore.find((item) => item.id === existingStore.id)!;
+        const inventoryMatch = getInventoryMatch(nextInventory, refreshedStore);
+
+        if (inventoryMatch) {
+          nextInventory = nextInventory.map((item) =>
+            item.id === inventoryMatch.id
+              ? {
+                  ...item,
+                  name: refreshedStore.name,
+                  subCategory: refreshedStore.subCategory ?? "",
+                  unit: refreshedStore.unit,
+                  stock: totalBalance,
+                  buyingPrice: refreshedStore.buyingPrice ?? item.buyingPrice,
+                  receivedStock: roundStock((item.receivedStock ?? 0) + line.addedQty),
+                }
+              : item,
+          );
+        } else {
+          nextInventory = [
+            {
+              id: `inv-kitchen-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              barcode: "",
+              name: refreshedStore.name,
+              category: departmentCategory,
+              subCategory: refreshedStore.subCategory ?? "",
+              size: refreshedStore.size ?? "",
+              stock: totalBalance,
+              totSold: 0,
+              buyingPrice: refreshedStore.buyingPrice ?? line.pricePerUnit,
+              sellingPrice: 0,
+              price: 0,
+              status: "ACTIVE",
+              minStock: refreshedStore.minStock,
+              unit: refreshedStore.unit,
+              damages: 0,
+              receivedStock: line.addedQty,
+            },
+            ...nextInventory,
+          ];
+        }
+      } else {
+        const newStore: MainStoreItem = {
+            id: `kitchen-store-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            name: line.itemName.trim(),
+            subCategory: line.category.trim(),
+            stock: totalBalance,
+            unit: line.unit.trim() || "kg",
+            minStock: 1,
+            lane: department,
+            buyingPrice: line.pricePerUnit,
+            receivedStock: line.addedQty,
+            damages: 0,
+        };
+
+        nextKitchenStore = [newStore, ...nextKitchenStore];
+        nextInventory = [
+          {
+            id: `inv-kitchen-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            barcode: "",
+            name: newStore.name,
+            category: departmentCategory,
+            subCategory: newStore.subCategory ?? "",
+            size: "",
+            stock: totalBalance,
+            totSold: 0,
+            buyingPrice: line.pricePerUnit,
+            sellingPrice: 0,
+            price: 0,
+            status: "ACTIVE",
+            minStock: 1,
+            unit: newStore.unit,
+            damages: 0,
+            receivedStock: line.addedQty,
+          },
+          ...nextInventory,
+        ];
+      }
+    });
+
+    applyStoreAndInventoryChanges(nextKitchenStore, nextInventory);
+
+    writeJson(purchaseHistoryKey, [
+      {
+        ...purchaseSession,
+        lines: validLines,
+        closedAt,
+        signoff: closeNotes,
+      },
+      ...purchaseHistory,
+    ]);
+    persistPurchaseSession(null);
+    setCloseTarget(null);
+    toast({ title: purchaseCopy.success });
+  };
+
+  const closeDailySession = () => {
+    if (!dailySession) return;
+    const closedAt = combineDateAndTime(closeDate, closeTime);
+
+    const validLines = dailySession.lines.filter((line) => line.itemName.trim().length > 0);
+    if (validLines.length === 0) {
+      toast({ title: "No stock sheet rows to save", variant: "destructive" });
+      return;
+    }
+
+    let nextKitchenStore = [...storeItems];
+    let nextInventory = [...inventoryItems];
+
+    validLines.forEach((line) => {
+      const closingStock = roundStock(line.openingStock + line.received - line.used - line.wastage);
+      const existingStore = line.itemId ? nextKitchenStore.find((item) => item.id === line.itemId) : null;
+
+      if (existingStore) {
+        nextKitchenStore = nextKitchenStore.map((item) =>
+          item.id === existingStore.id
+            ? {
+                ...item,
+                name: line.itemName.trim(),
+                subCategory: line.category.trim(),
+                unit: line.unit.trim() || item.unit,
+                stock: closingStock,
+                receivedStock: roundStock((item.receivedStock ?? 0) + line.received),
+                damages: roundStock((item.damages ?? 0) + line.wastage),
+              }
+            : item,
+        );
+
+        const refreshedStore = nextKitchenStore.find((item) => item.id === existingStore.id)!;
+        const inventoryMatch = getInventoryMatch(nextInventory, refreshedStore);
+
+        if (inventoryMatch) {
+          nextInventory = nextInventory.map((item) =>
+            item.id === inventoryMatch.id
+              ? {
+                  ...item,
+                  name: refreshedStore.name,
+                  subCategory: refreshedStore.subCategory ?? "",
+                  unit: refreshedStore.unit,
+                  stock: closingStock,
+                  receivedStock: roundStock((item.receivedStock ?? 0) + line.received),
+                  damages: roundStock((item.damages ?? 0) + line.wastage),
+                }
+              : item,
+          );
+        } else {
+          nextInventory = [
+            {
+              id: `inv-kitchen-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              barcode: "",
+              name: refreshedStore.name,
+              category: departmentCategory,
+              subCategory: refreshedStore.subCategory ?? "",
+              size: refreshedStore.size ?? "",
+              stock: closingStock,
+              totSold: 0,
+              buyingPrice: refreshedStore.buyingPrice ?? 0,
+              sellingPrice: 0,
+              price: 0,
+              status: "ACTIVE",
+              minStock: refreshedStore.minStock,
+              unit: refreshedStore.unit,
+              damages: line.wastage,
+              receivedStock: line.received,
+            },
+            ...nextInventory,
+          ];
+        }
+      } else {
+        const newStore: MainStoreItem = {
+          id: `kitchen-store-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          name: line.itemName.trim(),
+          subCategory: line.category.trim(),
+          stock: closingStock,
+          unit: line.unit.trim() || "kg",
+          minStock: 1,
+          lane: department,
+          buyingPrice: 0,
+          receivedStock: line.received,
+          damages: line.wastage,
+        };
+
+        nextKitchenStore = [newStore, ...nextKitchenStore];
+        nextInventory = [
+          {
+            id: `inv-kitchen-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            barcode: "",
+            name: newStore.name,
+            category: departmentCategory,
+            subCategory: newStore.subCategory ?? "",
+            size: "",
+            stock: closingStock,
+            totSold: 0,
+            buyingPrice: 0,
+            sellingPrice: 0,
+            price: 0,
+            status: "ACTIVE",
+            minStock: 1,
+            unit: newStore.unit,
+            damages: line.wastage,
+            receivedStock: line.received,
+          },
+          ...nextInventory,
+        ];
+      }
+    });
+
+    applyStoreAndInventoryChanges(nextKitchenStore, nextInventory);
+
+    writeJson(dailyHistoryKey, [
+      {
+        ...dailySession,
+        lines: validLines,
+        closedAt,
+        signoff: closeNotes,
+      },
+      ...dailyHistory,
+    ]);
+    persistDailySession(null);
+    setCloseTarget(null);
+    toast({ title: dailyCopy.success });
+  };
+
+  const submitCloseDialog = () => {
+    if (
+      !closeNotes.preparedBy.trim() ||
+      !closeNotes.checkedBy.trim() ||
+      !closeNotes.approvedBy.trim() ||
+      !closeNotes.cashier.trim()
+    ) {
+      toast({ title: "Fill all signoff fields", variant: "destructive" });
+      return;
+    }
+
+    if (closeTarget === "purchase") {
+      closePurchaseSession();
+      return;
+    }
+
+    if (closeTarget === "daily-stock") {
+      closeDailySession();
+    }
+  };
+
+  const downloadPurchaseHistoryEntry = (entry: KitchenPurchaseHistoryEntry) => {
+    downloadCsvFile(`${department}-purchase-${getHistoryFileDate(entry.closedAt)}.csv`, [
+      ["Department", departmentLabel],
+      ["Record Type", "Daily Purchases"],
+      ["Started At", formatDateTime(entry.startedAt)],
+      ["Closed At", formatDateTime(entry.closedAt)],
+      ["Prepared By", entry.signoff.preparedBy],
+      ["Checked By", entry.signoff.checkedBy],
+      ["Approved By", entry.signoff.approvedBy],
+      ["Cashier", entry.signoff.cashier],
+      [],
+      ["Item", "Category", "Unit", "Balance", "Added", "Price", "Total Balance", "Amount"],
+      ...entry.lines.map((line) => [
+        line.itemName,
+        line.category,
+        line.unit,
+        line.previousBalance,
+        line.addedQty,
+        line.pricePerUnit,
+        getPurchaseLineTotalBalance(line),
+        roundStock(line.addedQty * line.pricePerUnit),
+      ]),
+      [],
+      ["Items", entry.lines.length],
+      ["Total Amount", getPurchaseEntryAmount(entry)],
+    ]);
+    toast({ title: `${departmentLabel} purchase entry downloaded` });
+  };
+
+  const downloadDailyHistoryEntry = (entry: KitchenDailyStockHistoryEntry) => {
+    const totals = getDailyEntryTotals(entry);
+
+    downloadCsvFile(`${department}-daily-stock-${getHistoryFileDate(entry.closedAt)}.csv`, [
+      ["Department", departmentLabel],
+      ["Record Type", "Daily Stock Entries"],
+      ["Started At", formatDateTime(entry.startedAt)],
+      ["Closed At", formatDateTime(entry.closedAt)],
+      ["Prepared By", entry.signoff.preparedBy],
+      ["Checked By", entry.signoff.checkedBy],
+      ["Approved By", entry.signoff.approvedBy],
+      ["Cashier", entry.signoff.cashier],
+      [],
+      ["Item", "Category", "Unit", "Opening Stock", "Received", "Used", "Wastage", "Closing Stock"],
+      ...entry.lines.map((line) => [
+        line.itemName,
+        line.category,
+        line.unit,
+        line.openingStock,
+        line.received,
+        line.used,
+        line.wastage,
+        getDailyLineClosingStock(line),
+      ]),
+      [],
+      ["Items", entry.lines.length],
+      ["Total Received", totals.received],
+      ["Total Used", totals.used],
+      ["Total Wastage", totals.wastage],
+    ]);
+    toast({ title: `${departmentLabel} daily entry downloaded` });
+  };
+
+  const renderHistoryPreview = () => {
+    if (!historyPreview) return null;
+
+    if (historyPreview.kind === "purchase") {
+      const entry = historyPreview.entry;
+
+      return (
+        <div className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-md border p-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Started At</p>
+              <p className="mt-2 text-sm font-bold">{formatDateTime(entry.startedAt)}</p>
+            </div>
+            <div className="rounded-md border p-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Closed At</p>
+              <p className="mt-2 text-sm font-bold">{formatDateTime(entry.closedAt)}</p>
+            </div>
+            <div className="rounded-md border p-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Items</p>
+              <p className="mt-2 text-sm font-bold">{entry.lines.length}</p>
+            </div>
+            <div className="rounded-md border p-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Total Amount</p>
+              <p className="mt-2 text-sm font-bold">{formatMoney(getPurchaseEntryAmount(entry))}</p>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-md border p-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Prepared By</p>
+              <p className="mt-2 text-sm font-bold">{entry.signoff.preparedBy || "-"}</p>
+            </div>
+            <div className="rounded-md border p-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Checked By</p>
+              <p className="mt-2 text-sm font-bold">{entry.signoff.checkedBy || "-"}</p>
+            </div>
+            <div className="rounded-md border p-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Approved By</p>
+              <p className="mt-2 text-sm font-bold">{entry.signoff.approvedBy || "-"}</p>
+            </div>
+            <div className="rounded-md border p-3">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Cashier</p>
+              <p className="mt-2 text-sm font-bold">{entry.signoff.cashier || "-"}</p>
+            </div>
+          </div>
+
+          <div className="max-h-[50vh] overflow-auto rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Item</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Unit</TableHead>
+                  <TableHead>Balance</TableHead>
+                  <TableHead>Added</TableHead>
+                  <TableHead>Price</TableHead>
+                  <TableHead>Total Balance</TableHead>
+                  <TableHead>Amount</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {entry.lines.map((line) => (
+                  <TableRow key={line.id}>
+                    <TableCell className="font-bold">{line.itemName}</TableCell>
+                    <TableCell className="font-bold">{line.category || "-"}</TableCell>
+                    <TableCell className="font-bold">{line.unit}</TableCell>
+                    <TableCell className="font-bold">{line.previousBalance}</TableCell>
+                    <TableCell className="font-bold">{line.addedQty}</TableCell>
+                    <TableCell className="font-bold">{formatMoney(line.pricePerUnit)}</TableCell>
+                    <TableCell className="font-bold">{getPurchaseLineTotalBalance(line)}</TableCell>
+                    <TableCell className="font-bold">{formatMoney(roundStock(line.addedQty * line.pricePerUnit))}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      );
+    }
+
+    const entry = historyPreview.entry;
+    const totals = getDailyEntryTotals(entry);
+
+    return (
+      <div className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <div className="rounded-md border p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Started At</p>
+            <p className="mt-2 text-sm font-bold">{formatDateTime(entry.startedAt)}</p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Closed At</p>
+            <p className="mt-2 text-sm font-bold">{formatDateTime(entry.closedAt)}</p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Items</p>
+            <p className="mt-2 text-sm font-bold">{entry.lines.length}</p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Received</p>
+            <p className="mt-2 text-sm font-bold">{totals.received}</p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Used</p>
+            <p className="mt-2 text-sm font-bold">{totals.used}</p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Wastage</p>
+            <p className="mt-2 text-sm font-bold">{totals.wastage}</p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-md border p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Prepared By</p>
+            <p className="mt-2 text-sm font-bold">{entry.signoff.preparedBy || "-"}</p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Checked By</p>
+            <p className="mt-2 text-sm font-bold">{entry.signoff.checkedBy || "-"}</p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Approved By</p>
+            <p className="mt-2 text-sm font-bold">{entry.signoff.approvedBy || "-"}</p>
+          </div>
+          <div className="rounded-md border p-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Cashier</p>
+            <p className="mt-2 text-sm font-bold">{entry.signoff.cashier || "-"}</p>
+          </div>
+        </div>
+
+        <div className="max-h-[50vh] overflow-auto rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Item</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Unit</TableHead>
+                <TableHead>Opening Stock</TableHead>
+                <TableHead>Received</TableHead>
+                <TableHead>Used</TableHead>
+                <TableHead>Wastage</TableHead>
+                <TableHead>Closing Stock</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {entry.lines.map((line) => (
+                <TableRow key={line.id}>
+                  <TableCell className="font-bold">{line.itemName}</TableCell>
+                  <TableCell className="font-bold">{line.category || "-"}</TableCell>
+                  <TableCell className="font-bold">{line.unit}</TableCell>
+                  <TableCell className="font-bold">{line.openingStock}</TableCell>
+                  <TableCell className="font-bold">{line.received}</TableCell>
+                  <TableCell className="font-bold">{line.used}</TableCell>
+                  <TableCell className="font-bold">{line.wastage}</TableCell>
+                  <TableCell className="font-bold">{getDailyLineClosingStock(line)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      {availableTabs.length > 1 && (
+        <Tabs value={visibleActiveTab} onValueChange={(value) => setActiveTab(value as KitchenWorkflowTab)}>
+          <TabsList className="h-11">
+            {availableTabs.includes("purchase") && (
+              <TabsTrigger value="purchase" className="font-black uppercase text-[10px] tracking-widest">
+                {purchaseCopy.tabLabel}
+              </TabsTrigger>
+            )}
+            {availableTabs.includes("daily-stock") && (
+            <TabsTrigger value="daily-stock" className="font-black uppercase text-[10px] tracking-widest">
+              {dailyCopy.tabLabel}
+            </TabsTrigger>
+            )}
+          </TabsList>
+        </Tabs>
+      )}
+
+      {visibleActiveTab === "purchase" && (
+        <div className="space-y-6">
+          <Card className="shadow-sm">
+            <CardHeader className="border-b">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <CardTitle className="text-lg font-black uppercase">{purchaseCopy.title}</CardTitle>
+                  <CardDescription>
+                    {isBaristaDepartment
+                      ? "Search an existing item, enter only the added stock and price, then close the purchase sheet."
+                      : `Start a purchase sheet, enter added stock for the day, then close it to save history and update ${departmentLabel.toLowerCase()} inventory.`}
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  {purchaseSession ? (
+                    <Badge variant="outline" className="border-emerald-500 bg-emerald-50 text-emerald-700">
+                      {purchaseCopy.active} {formatDateTime(purchaseSession.startedAt)}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline">{purchaseCopy.inactive}</Badge>
+                  )}
+                  <Button onClick={startPurchaseSession} disabled={Boolean(purchaseSession) || isDirector}>
+                    {purchaseCopy.openButton}
+                  </Button>
+                  <Button variant="outline" onClick={() => openCloseDialog("purchase")} disabled={!purchaseSession || isDirector}>
+                    {purchaseCopy.closeButton}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 p-4">
+              {purchaseSession ? (
+                <>
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <Input
+                      value={purchaseSearch}
+                      onChange={(event) => setPurchaseSearch(event.target.value)}
+                      placeholder="Search item"
+                      className="max-w-md"
+                    />
+                    {!isBaristaDepartment && (
+                      <Button variant="outline" onClick={addPurchaseLine} disabled={isDirector}>
+                        Add Item Row
+                      </Button>
+                    )}
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Item</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Unit</TableHead>
+                        <TableHead>Balance</TableHead>
+                        <TableHead>Add</TableHead>
+                        <TableHead>Price</TableHead>
+                        <TableHead>Total Balance</TableHead>
+                        <TableHead>Amount</TableHead>
+                        {!isBaristaDepartment && <TableHead className="text-right">Action</TableHead>}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredPurchaseLines.map((line) => {
+                        const totalBalance = roundStock(line.previousBalance + line.addedQty);
+                        const amount = roundStock(line.addedQty * line.pricePerUnit);
+                        const lockStaticPurchaseFields = isBaristaDepartment;
+                        return (
+                          <TableRow key={line.id}>
+                            <TableCell>
+                              <Input value={line.itemName} onChange={(event) => updatePurchaseLine(line.id, "itemName", event.target.value)} disabled={lockStaticPurchaseFields} />
+                            </TableCell>
+                            <TableCell>
+                              <Input value={line.category} onChange={(event) => updatePurchaseLine(line.id, "category", event.target.value)} disabled={lockStaticPurchaseFields} />
+                            </TableCell>
+                            <TableCell>
+                              <Input value={line.unit} onChange={(event) => updatePurchaseLine(line.id, "unit", event.target.value)} disabled={lockStaticPurchaseFields} />
+                            </TableCell>
+                            <TableCell>
+                              <NumericInput min="0" value={line.previousBalance} onChange={(event: any) => updatePurchaseLine(line.id, "previousBalance", event.target.value)} disabled={lockStaticPurchaseFields} />
+                            </TableCell>
+                            <TableCell>
+                              <NumericInput min="0" value={line.addedQty} onChange={(event: any) => updatePurchaseLine(line.id, "addedQty", event.target.value)} />
+                            </TableCell>
+                            <TableCell>
+                              <NumericInput min="0" value={line.pricePerUnit} onChange={(event: any) => updatePurchaseLine(line.id, "pricePerUnit", event.target.value)} />
+                            </TableCell>
+                            <TableCell className="font-bold">{totalBalance}</TableCell>
+                            <TableCell className="font-bold">{formatMoney(amount)}</TableCell>
+                            {!isBaristaDepartment && (
+                            <TableCell className="text-right">
+                              <Button variant="ghost" size="sm" onClick={() => removePurchaseLine(line.id)} disabled={isDirector}>
+                                Remove
+                              </Button>
+                            </TableCell>
+                            )}
+                          </TableRow>
+                        );
+                      })}
+                      {filteredPurchaseLines.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={isBaristaDepartment ? 8 : 9} className="py-10 text-center text-xs font-black uppercase tracking-widest text-muted-foreground">
+                            No purchase rows match your search
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                  <div className="flex justify-end">
+                    <p className="text-sm font-black uppercase tracking-widest">Total Amount: {formatMoney(purchaseTotalAmount)}</p>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">{purchaseCopy.empty}</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm">
+            <CardHeader className="border-b">
+              <CardTitle className="text-lg font-black uppercase">Saved Purchase History</CardTitle>
+              <CardDescription>{`Closed ${departmentLabel.toLowerCase()} purchase sessions are stored here for daily reference.`}</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Items</TableHead>
+                    <TableHead>Total Amount</TableHead>
+                    <TableHead>Prepared By</TableHead>
+                    <TableHead>Approved By</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredPurchaseHistory.map((entry) => (
+                    <TableRow key={entry.id}>
+                      <TableCell className="font-bold">{formatDateTime(entry.closedAt)}</TableCell>
+                      <TableCell className="font-bold">{entry.lines.length}</TableCell>
+                      <TableCell className="font-bold">{formatMoney(getPurchaseEntryAmount(entry))}</TableCell>
+                      <TableCell className="font-bold">{entry.signoff.preparedBy}</TableCell>
+                      <TableCell className="font-bold">{entry.signoff.approvedBy}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button variant="outline" size="sm" onClick={() => setHistoryPreview({ kind: "purchase", entry })}>
+                            <Eye className="mr-2 h-3.5 w-3.5" />
+                            View
+                          </Button>
+                          <Button size="sm" onClick={() => downloadPurchaseHistoryEntry(entry)}>
+                            <Download className="mr-2 h-3.5 w-3.5" />
+                            Download
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {filteredPurchaseHistory.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-10 text-center text-xs font-black uppercase tracking-widest text-muted-foreground">
+                        No saved purchase sessions match your search
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {visibleActiveTab === "daily-stock" && (
+        <div className="space-y-6">
+          <Card className="shadow-sm">
+            <CardHeader className="border-b">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <CardTitle className="text-lg font-black uppercase">{dailyCopy.title}</CardTitle>
+                  <CardDescription>
+                    {`Start a daily stock session, record opening, received, used, wastage, and close it to save the day and update ${departmentLabel.toLowerCase()} inventory.`}
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  {dailySession ? (
+                    <Badge variant="outline" className="border-emerald-500 bg-emerald-50 text-emerald-700">
+                      {dailyCopy.active} {formatDateTime(dailySession.startedAt)}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline">{dailyCopy.inactive}</Badge>
+                  )}
+                  <Button onClick={startDailySession} disabled={Boolean(dailySession) || isDirector}>
+                    {dailyCopy.openButton}
+                  </Button>
+                  <Button variant="outline" onClick={() => openCloseDialog("daily-stock")} disabled={!dailySession || isDirector}>
+                    {dailyCopy.closeButton}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 p-4">
+              {dailySession ? (
+                <>
+                  <div className="flex justify-end">
+                    <Button variant="outline" onClick={addDailyLine} disabled={isDirector}>
+                      Add Item Row
+                    </Button>
+                  </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Item Name</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Unit</TableHead>
+                        <TableHead>Opening Stock</TableHead>
+                        <TableHead>Received</TableHead>
+                        <TableHead>Used</TableHead>
+                        <TableHead>Wastage</TableHead>
+                        <TableHead>Closing Stock</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredDailyLines.map((line) => {
+                        const closingStock = roundStock(line.openingStock + line.received - line.used - line.wastage);
+                        return (
+                          <TableRow key={line.id}>
+                            <TableCell>
+                              <Input value={line.itemName} onChange={(event) => updateDailyLine(line.id, "itemName", event.target.value)} />
+                            </TableCell>
+                            <TableCell>
+                              <Input value={line.category} onChange={(event) => updateDailyLine(line.id, "category", event.target.value)} />
+                            </TableCell>
+                            <TableCell>
+                              <Input value={line.unit} onChange={(event) => updateDailyLine(line.id, "unit", event.target.value)} />
+                            </TableCell>
+                            <TableCell>
+                              <NumericInput min="0" value={line.openingStock} onChange={(event: any) => updateDailyLine(line.id, "openingStock", event.target.value)} />
+                            </TableCell>
+                            <TableCell>
+                              <NumericInput min="0" value={line.received} onChange={(event: any) => updateDailyLine(line.id, "received", event.target.value)} />
+                            </TableCell>
+                            <TableCell>
+                              <NumericInput min="0" value={line.used} onChange={(event: any) => updateDailyLine(line.id, "used", event.target.value)} />
+                            </TableCell>
+                            <TableCell>
+                              <NumericInput min="0" value={line.wastage} onChange={(event: any) => updateDailyLine(line.id, "wastage", event.target.value)} />
+                            </TableCell>
+                            <TableCell className="font-bold">{closingStock}</TableCell>
+                            <TableCell className="text-right">
+                              <Button variant="ghost" size="sm" onClick={() => removeDailyLine(line.id)} disabled={isDirector}>
+                                Remove
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                      {filteredDailyLines.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={9} className="py-10 text-center text-xs font-black uppercase tracking-widest text-muted-foreground">
+                            No daily stock rows match your search
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <Card className="shadow-none">
+                      <CardContent className="p-4">
+                        <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Received</p>
+                        <p className="mt-2 text-2xl font-black">{dailyTotals.received}</p>
+                      </CardContent>
+                    </Card>
+                    <Card className="shadow-none">
+                      <CardContent className="p-4">
+                        <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Used</p>
+                        <p className="mt-2 text-2xl font-black">{dailyTotals.used}</p>
+                      </CardContent>
+                    </Card>
+                    <Card className="shadow-none">
+                      <CardContent className="p-4">
+                        <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Wastage</p>
+                        <p className="mt-2 text-2xl font-black">{dailyTotals.wastage}</p>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">{dailyCopy.empty}</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm">
+            <CardHeader className="border-b">
+              <CardTitle className="text-lg font-black uppercase">Saved Daily Stock History</CardTitle>
+              <CardDescription>{`Closed ${departmentLabel.toLowerCase()} daily stock sheets are stored here for review.`}</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Items</TableHead>
+                    <TableHead>Received</TableHead>
+                    <TableHead>Used</TableHead>
+                    <TableHead>Wastage</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredDailyHistory.map((entry) => {
+                    const totals = getDailyEntryTotals(entry);
+
+                    return (
+                      <TableRow key={entry.id}>
+                        <TableCell className="font-bold">{formatDateTime(entry.closedAt)}</TableCell>
+                        <TableCell className="font-bold">{entry.lines.length}</TableCell>
+                        <TableCell className="font-bold">{totals.received}</TableCell>
+                        <TableCell className="font-bold">{totals.used}</TableCell>
+                        <TableCell className="font-bold">{totals.wastage}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button variant="outline" size="sm" onClick={() => setHistoryPreview({ kind: "daily-stock", entry })}>
+                              <Eye className="mr-2 h-3.5 w-3.5" />
+                              View
+                            </Button>
+                            <Button size="sm" onClick={() => downloadDailyHistoryEntry(entry)}>
+                              <Download className="mr-2 h-3.5 w-3.5" />
+                              Download
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {filteredDailyHistory.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-10 text-center text-xs font-black uppercase tracking-widest text-muted-foreground">
+                        No saved daily sheets match your search
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      <Dialog open={closeTarget !== null} onOpenChange={(open) => !open && setCloseTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-black uppercase tracking-tight">
+              {closeTarget === "purchase" ? purchaseCopy.dialogTitle : dailyCopy.dialogTitle}
+            </DialogTitle>
+            <DialogDescription>
+              Fill the signoff details, then pick the exact close date and time to save the session and update inventory.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Input placeholder="Prepared by" value={closeNotes.preparedBy} onChange={(event) => setCloseNotes((current) => ({ ...current, preparedBy: event.target.value }))} />
+            <Input placeholder="Checked by" value={closeNotes.checkedBy} onChange={(event) => setCloseNotes((current) => ({ ...current, checkedBy: event.target.value }))} />
+            <Input placeholder="Approved by" value={closeNotes.approvedBy} onChange={(event) => setCloseNotes((current) => ({ ...current, approvedBy: event.target.value }))} />
+            <Input placeholder="Cashier" value={closeNotes.cashier} onChange={(event) => setCloseNotes((current) => ({ ...current, cashier: event.target.value }))} />
+            <Input type="date" value={closeDate} onChange={(event) => setCloseDate(event.target.value)} />
+            <Input type="time" value={closeTime} onChange={(event) => setCloseTime(event.target.value)} />
+          </div>
+          <Textarea value={`Prepared by: ${closeNotes.preparedBy}\nChecked by: ${closeNotes.checkedBy}\nApproved by: ${closeNotes.approvedBy}\nCashier: ${closeNotes.cashier}\nClose date: ${closeDate}\nClose time: ${closeTime}`} readOnly className="min-h-[130px]" />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCloseTarget(null)}>Cancel</Button>
+            <Button onClick={submitCloseDialog}>Close Shift</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={historyPreview !== null} onOpenChange={(open) => !open && setHistoryPreview(null)}>
+        <DialogContent className="max-h-[85vh] max-w-6xl overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="font-black uppercase tracking-tight">
+              {historyPreview?.kind === "purchase" ? `${departmentLabel} Purchase Entry` : `${departmentLabel} Daily Stock Entry`}
+            </DialogTitle>
+            <DialogDescription>
+              {historyPreview
+                ? `Table view for the ${departmentLabel.toLowerCase()} record closed ${formatDateTime(historyPreview.entry.closedAt)}.`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[65vh] overflow-y-auto pr-1">
+            {renderHistoryPreview()}
+          </div>
+          <DialogFooter>
+            {historyPreview?.kind === "purchase" && (
+              <Button variant="outline" onClick={() => downloadPurchaseHistoryEntry(historyPreview.entry)}>
+                <Download className="mr-2 h-4 w-4" />
+                Download
+              </Button>
+            )}
+            {historyPreview?.kind === "daily-stock" && (
+              <Button variant="outline" onClick={() => downloadDailyHistoryEntry(historyPreview.entry)}>
+                <Download className="mr-2 h-4 w-4" />
+                Download
+              </Button>
+            )}
+            <Button onClick={() => setHistoryPreview(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

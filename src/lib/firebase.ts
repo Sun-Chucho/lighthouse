@@ -5,6 +5,7 @@ import type { Firestore } from "firebase/firestore";
 export const firebaseConfig = {
   apiKey: "AIzaSyCZK3HSQwhAZI1T3AzjBVBBAFqtC8xMy28",
   authDomain: "lighthouse-bf85b.firebaseapp.com",
+  databaseURL: "https://lighthouse-bf85b-default-rtdb.firebaseio.com",
   projectId: "lighthouse-bf85b",
   storageBucket: "lighthouse-bf85b.firebasestorage.app",
   messagingSenderId: "761425323084",

@@ -68,7 +68,7 @@ try {
     checkIn: "2099-01-01",
     checkOut: "2099-01-02",
     guests: 1,
-    roomType: "either",
+    roomType: "luxury",
     note: "Automated rule verification; removed immediately.",
     status: "pending",
     source: "web",

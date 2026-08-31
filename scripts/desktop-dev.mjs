@@ -3,7 +3,7 @@ import electronPath from "electron";
 
 const rendererUrl = "http://127.0.0.1:3000";
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
-const viteProcess = spawn(npmCommand, ["run", "dev"], {
+const nextProcess = spawn(npmCommand, ["run", "dev"], {
   stdio: "inherit",
   env: process.env,
 });
@@ -15,15 +15,15 @@ async function waitForRenderer() {
       const response = await fetch(rendererUrl);
       if (response.ok) return;
     } catch {
-      // Vite is still starting.
+      // Next.js is still starting.
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error(`Vite did not become available at ${rendererUrl}.`);
+  throw new Error(`Next.js did not become available at ${rendererUrl}.`);
 }
 
-function stopVite() {
-  if (!viteProcess.killed) viteProcess.kill("SIGTERM");
+function stopNext() {
+  if (!nextProcess.killed) nextProcess.kill("SIGTERM");
 }
 
 try {
@@ -36,14 +36,14 @@ try {
   });
 
   electronProcess.on("exit", (code) => {
-    stopVite();
+    stopNext();
     process.exitCode = code ?? 0;
   });
 } catch (error) {
-  stopVite();
+  stopNext();
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 }
 
-process.on("SIGINT", stopVite);
-process.on("SIGTERM", stopVite);
+process.on("SIGINT", stopNext);
+process.on("SIGTERM", stopNext);

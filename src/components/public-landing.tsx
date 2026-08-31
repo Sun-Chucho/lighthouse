@@ -1,3 +1,5 @@
+"use client";
+
 import {
   ArrowDownRight,
   ArrowRight,
@@ -15,16 +17,16 @@ import {
   Wifi,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useSync } from "../context/sync-context";
 import { formatPrice, ROOM_CATEGORIES } from "../data/rooms";
-import { AppLink } from "../lib/navigation";
 import { STAFF_PORTAL_PATH } from "../types/roles";
 
 type StayForm = {
   checkIn: string;
   checkOut: string;
   guests: string;
-  roomType: "luxury" | "classic" | "either";
+  roomType: "luxury" | "classic";
   guestName: string;
   email: string;
   phone: string;
@@ -35,7 +37,7 @@ const INITIAL_FORM: StayForm = {
   checkIn: "",
   checkOut: "",
   guests: "2",
-  roomType: "either",
+  roomType: "luxury",
   guestName: "",
   email: "",
   phone: "",
@@ -161,7 +163,6 @@ export function PublicLanding() {
           <label>
             <span><BedDouble size={15} /> Stay</span>
             <select value={form.roomType} onChange={(event) => updateField("roomType", event.target.value as StayForm["roomType"])}>
-              <option value="either">Best available</option>
               <option value="luxury">Luxury room</option>
               <option value="classic">Classic room</option>
             </select>
@@ -247,7 +248,7 @@ export function PublicLanding() {
             </div>
             <div className="reservation-form__row">
               <label><span>Guests</span><select value={form.guests} onChange={(event) => updateField("guests", event.target.value)}>{[1, 2, 3, 4, 5, 6].map((count) => <option value={count} key={count}>{count}</option>)}</select></label>
-              <label><span>Room preference</span><select value={form.roomType} onChange={(event) => updateField("roomType", event.target.value as StayForm["roomType"])}><option value="either">Best available</option><option value="luxury">Luxury</option><option value="classic">Classic</option></select></label>
+              <label><span>Room preference</span><select value={form.roomType} onChange={(event) => updateField("roomType", event.target.value as StayForm["roomType"])}><option value="luxury">Luxury</option><option value="classic">Classic</option></select></label>
             </div>
             <label><span>Full name</span><input type="text" required minLength={2} maxLength={120} autoComplete="name" value={form.guestName} onChange={(event) => updateField("guestName", event.target.value)} placeholder="Your name" /></label>
             <div className="reservation-form__row">
@@ -274,7 +275,7 @@ export function PublicLanding() {
         <div className="public-footer__brand"><img src="/logo.jpeg" alt="" width={62} height={62} /><span><strong>Lighthouse</strong><small>Lodge</small></span></div>
         <div><p className="public-kicker">Stay</p><a href="#stays">Luxury rooms</a><a href="#stays">Classic rooms</a><a href="#reserve">Request a booking</a></div>
         <div><p className="public-kicker">Lighthouse</p><span><MapPin size={14} /> Private lodge hospitality</span><span><Cloud size={14} /> Online and offline continuity</span></div>
-        <div className="public-footer__staff"><p className="public-kicker">Operations</p><AppLink href={STAFF_PORTAL_PATH}>Staff access <ArrowRight size={15} /></AppLink></div>
+        <div className="public-footer__staff"><p className="public-kicker">Operations</p><Link href={STAFF_PORTAL_PATH}>Staff access <ArrowRight size={15} /></Link></div>
         <p className="public-footer__legal">© {new Date().getFullYear()} Lighthouse Lodge. All stays are subject to confirmation.</p>
       </footer>
     </div>

@@ -1,0 +1,98 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 12%;
+    --primary: 27 45% 16%;
+    --primary-foreground: 41 72% 76%;
+    --secondary: 39 50% 43%;
+    --secondary-foreground: 28 45% 10%;
+    --muted: 38 30% 94%;
+    --muted-foreground: 28 22% 36%;
+    --accent: 40 56% 86%;
+    --accent-foreground: 27 45% 16%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 88%;
+    --input: 0 0% 88%;
+    --ring: 39 50% 43%;
+    --radius: 0.75rem;
+    --chart-1: 39 58% 52%;
+    --chart-2: 27 45% 22%;
+    --chart-3: 35 36% 36%;
+    --chart-4: 43 45% 65%;
+    --chart-5: 24 28% 12%;
+    --sidebar-background: 27 45% 8%;
+    --sidebar-foreground: 41 55% 88%;
+    --sidebar-primary: 39 50% 43%;
+    --sidebar-primary-foreground: 28 45% 10%;
+    --sidebar-accent: 27 35% 15%;
+    --sidebar-accent-foreground: 41 65% 82%;
+    --sidebar-border: 35 30% 22%;
+    --sidebar-ring: 39 50% 43%;
+  }
+
+  .dark {
+    --background: 27 45% 7%;
+    --foreground: 41 55% 90%;
+    --card: 27 40% 11%;
+    --card-foreground: 41 55% 90%;
+    --popover: 27 40% 11%;
+    --popover-foreground: 41 55% 90%;
+    --primary: 39 55% 52%;
+    --primary-foreground: 27 45% 8%;
+    --secondary: 27 34% 19%;
+    --secondary-foreground: 41 55% 90%;
+    --muted: 27 30% 15%;
+    --muted-foreground: 39 24% 68%;
+    --accent: 32 36% 22%;
+    --accent-foreground: 41 65% 86%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 32 24% 22%;
+    --input: 32 24% 22%;
+    --ring: 39 55% 52%;
+    --sidebar-background: 27 50% 5%;
+    --sidebar-foreground: 41 55% 90%;
+    --sidebar-primary: 39 55% 52%;
+    --sidebar-primary-foreground: 27 45% 8%;
+    --sidebar-accent: 27 34% 14%;
+    --sidebar-accent-foreground: 41 65% 86%;
+    --sidebar-border: 32 24% 18%;
+    --sidebar-ring: 39 55% 52%;
+  }
+}
+
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    min-height: 100%;
+    width: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    background: hsl(var(--background));
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground;
+    min-height: 100dvh;
+    width: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: auto;
+    -webkit-overflow-scrolling: touch;
+    -webkit-tap-highlight-color: transparent;
+  }
+}

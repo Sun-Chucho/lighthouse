@@ -1,4 +1,10 @@
-import type { StaffSession } from "../context/auth-context";
+import type { Role } from "../app/lib/mock-data";
+
+export type DesktopStaffSession = {
+  uid: string;
+  displayName: string;
+  role: Role;
+};
 
 export type DesktopUpdateStage =
   | "development"
@@ -19,8 +25,8 @@ export type LighthouseDesktopBridge = {
   isDesktop: true;
   platform: string;
   getVersion: () => Promise<string>;
-  storeVerifiedSession: (session: StaffSession) => Promise<boolean>;
-  loadVerifiedSession: () => Promise<StaffSession | null>;
+  storeVerifiedSession: (session: DesktopStaffSession) => Promise<boolean>;
+  loadVerifiedSession: () => Promise<DesktopStaffSession | null>;
   clearVerifiedSession: () => Promise<boolean>;
   checkForUpdates: () => Promise<void>;
   installUpdate: () => Promise<void>;

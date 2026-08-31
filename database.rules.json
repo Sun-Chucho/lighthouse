@@ -1,0 +1,22 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "lighthouse-v1": {
+      ".read": "auth != null && (auth.token.role === 'manager' || auth.token.role === 'director' || auth.token.role === 'inventory' || auth.token.role === 'cashier' || auth.token.role === 'kitchen' || auth.token.role === 'barista')",
+      ".write": "auth != null && (auth.token.role === 'manager' || auth.token.role === 'director' || auth.token.role === 'inventory' || auth.token.role === 'cashier' || auth.token.role === 'kitchen' || auth.token.role === 'barista')",
+      "lighthouse-rooms-state": {
+        "$index": {
+          ".validate": "((newData.child('number').val() === '301' || newData.child('number').val() === '304' || newData.child('number').val() === '308' || newData.child('number').val() === '313' || newData.child('number').val() === '314' || newData.child('number').val() === '315' || newData.child('number').val() === '317' || newData.child('number').val() === '318' || newData.child('number').val() === '319' || newData.child('number').val() === '320') && newData.child('price').val() === 60000) || ((newData.child('number').val() === '302' || newData.child('number').val() === '303' || newData.child('number').val() === '305' || newData.child('number').val() === '306' || newData.child('number').val() === '307' || newData.child('number').val() === '309' || newData.child('number').val() === '310' || newData.child('number').val() === '311' || newData.child('number').val() === '312' || newData.child('number').val() === '316') && newData.child('price').val() === 80000)"
+        }
+      },
+      "lighthouse-cashier-state": {
+        "transactions": {
+          "$index": {
+            ".validate": "((newData.child('roomNumber').val() === '301' || newData.child('roomNumber').val() === '304' || newData.child('roomNumber').val() === '308' || newData.child('roomNumber').val() === '313' || newData.child('roomNumber').val() === '314' || newData.child('roomNumber').val() === '315' || newData.child('roomNumber').val() === '317' || newData.child('roomNumber').val() === '318' || newData.child('roomNumber').val() === '319' || newData.child('roomNumber').val() === '320') && newData.child('ratePerNight').val() === 60000) || ((newData.child('roomNumber').val() === '302' || newData.child('roomNumber').val() === '303' || newData.child('roomNumber').val() === '305' || newData.child('roomNumber').val() === '306' || newData.child('roomNumber').val() === '307' || newData.child('roomNumber').val() === '309' || newData.child('roomNumber').val() === '310' || newData.child('roomNumber').val() === '311' || newData.child('roomNumber').val() === '312' || newData.child('roomNumber').val() === '316') && newData.child('ratePerNight').val() === 80000)"
+          }
+        }
+      }
+    }
+  }
+}

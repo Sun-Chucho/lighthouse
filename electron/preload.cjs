@@ -15,3 +15,8 @@ contextBridge.exposeInMainWorld("lighthouseDesktop", {
     return () => ipcRenderer.removeListener("desktop:update-state", listener);
   },
 });
+
+contextBridge.exposeInMainWorld("lighthouseHardware", {
+  listPrinters: () => ipcRenderer.invoke("hardware:list-printers"),
+  printRaw: (job) => ipcRenderer.invoke("hardware:print-receipt", job),
+});

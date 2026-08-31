@@ -17,14 +17,14 @@ service cloud.firestore {
     function staffMember() {
       return hasRole('manager')
         || hasRole('director')
-        || hasRole('reception')
+        || hasRole('cashier')
         || hasRole('inventory')
         || hasRole('kitchen')
-        || hasRole('bar');
+        || hasRole('barista');
     }
 
     function bookingOperator() {
-      return hasRole('manager') || hasRole('director') || hasRole('reception');
+      return hasRole('manager') || hasRole('director') || hasRole('cashier');
     }
 
     function validBookingInquiry() {
@@ -75,7 +75,7 @@ service cloud.firestore {
         && request.resource.data.guests is int
         && request.resource.data.guests >= 1
         && request.resource.data.guests <= 12
-        && request.resource.data.roomType in ['luxury', 'classic', 'either']
+        && request.resource.data.roomType in ['luxury', 'classic']
         && request.resource.data.note is string
         && request.resource.data.note.size() <= 600
         && request.resource.data.status == 'pending'
