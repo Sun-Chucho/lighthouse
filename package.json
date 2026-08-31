@@ -14,8 +14,8 @@
     "desktop:stage": "node scripts/prepare-desktop-package.mjs",
     "desktop:dev": "node scripts/desktop-dev.mjs",
     "desktop:run": "npm run desktop:prepare && electron .",
-    "desktop:dir": "npm run desktop:prepare && npm run desktop:stage && electron-builder --projectDir .desktop-package --win --dir --publish never",
-    "desktop:pack": "npm run desktop:prepare && npm run desktop:stage && electron-builder --projectDir .desktop-package --win nsis --publish never",
+    "desktop:dir": "npm run desktop:prepare && npm run desktop:stage && electron-builder --projectDir .desktop-package --win --dir --publish never && node scripts/verify-desktop-bundle.mjs",
+    "desktop:pack": "npm run desktop:prepare && npm run desktop:stage && electron-builder --projectDir .desktop-package --win nsis --publish never && node scripts/verify-desktop-bundle.mjs",
     "desktop:publish": "npm run desktop:prepare && npm run desktop:stage && electron-builder --projectDir .desktop-package --win nsis --publish always",
     "firebase:create-user": "node scripts/manage-staff-user.mjs",
     "firebase:verify-auth": "node scripts/verify-firebase-auth.mjs",
@@ -122,6 +122,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Lighthouse Lodge",
+      "runAfterFinish": true,
       "deleteAppDataOnUninstall": false
     },
     "publish": [

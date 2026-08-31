@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { basename, resolve, sep } from "node:path";
 
@@ -20,7 +20,16 @@ await Promise.all([
   cp(resolve(repositoryRoot, "electron", "main.mjs"), resolve(stagingRoot, "main.mjs")),
   cp(resolve(repositoryRoot, "electron", "preload.cjs"), resolve(stagingRoot, "preload.cjs")),
   cp(resolve(repositoryRoot, "build", "icon.png"), resolve(stagingRoot, "build", "icon.png")),
+  cp(resolve(repositoryRoot, ".next", "standalone"), resolve(stagingRoot, "server"), { recursive: true }),
 ]);
+
+// electron-builder intentionally omits a file matcher's root `node_modules`
+// directory. Keep the traced Next.js runtime under a neutral directory name
+// and expose it through NODE_PATH when the packaged server is launched.
+await rename(
+  resolve(stagingRoot, "server", "node_modules"),
+  resolve(stagingRoot, "server", "runtime"),
+);
 
 const desktopPackage = {
   name: "lighthouse-desktop-shell",
@@ -43,7 +52,7 @@ const desktopPackage = {
     files: ["main.mjs", "preload.cjs", "package.json"],
     extraResources: [
       {
-        from: resolve(repositoryRoot, ".next", "standalone"),
+        from: resolve(stagingRoot, "server"),
         to: "server",
       },
       {

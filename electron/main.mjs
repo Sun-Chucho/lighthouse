@@ -1,12 +1,13 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { createWriteStream, existsSync } from "node:fs";
 import { readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { createServer } from "node:net";
-import { dirname, resolve } from "node:path";
+import { delimiter, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   net,
@@ -28,6 +29,7 @@ let mainWindow = null;
 let localServer = null;
 let localOrigin = developmentOrigin;
 let updateInterval = null;
+let appIsQuitting = false;
 
 app.setAppUserModelId(applicationId);
 
@@ -82,15 +84,40 @@ function findAvailablePort() {
 
 async function waitForServer(origin) {
   for (let attempt = 0; attempt < 120; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1_000);
     try {
-      const response = await net.fetch(`${origin}/staff`, { bypassCustomProtocolHandlers: true });
+      const response = await net.fetch(`${origin}/staff`, {
+        bypassCustomProtocolHandlers: true,
+        signal: controller.signal,
+      });
       if (response.ok) return;
     } catch {
       // The bundled Next.js server is still starting.
+    } finally {
+      clearTimeout(timeout);
     }
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
   }
   throw new Error("The bundled Lighthouse server did not start.");
+}
+
+function startupLogPath() {
+  return resolve(app.getPath("userData"), "startup.log");
+}
+
+function showStartupFailure(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  const logPath = startupLogPath();
+  console.error(error);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const document = `<!doctype html><html><head><meta charset="utf-8"><style>html{color-scheme:dark}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#140c07;color:#f7e7bd;font:16px/1.5 Segoe UI,sans-serif}.card{max-width:640px;margin:32px;padding:32px;border:1px solid #b98a3d;border-radius:18px;background:#21130c}h1{color:#e3bd6a;margin-top:0}code{word-break:break-all;color:#fff}</style></head><body><main class="card"><h1>Lighthouse could not start</h1><p>${escapeReceiptText(message)}</p><p>Close and reopen the application. If the problem continues, send this log file to support:</p><code>${escapeReceiptText(logPath)}</code></main></body></html>`;
+    void mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(document)}`);
+  }
+  dialog.showErrorBox(
+    "Lighthouse startup error",
+    `${message}\n\nDiagnostic log: ${logPath}`,
+  );
 }
 
 async function startBundledServer() {
@@ -106,6 +133,11 @@ async function startBundledServer() {
 
   const port = await findAvailablePort();
   localOrigin = `http://127.0.0.1:${port}`;
+  await mkdir(app.getPath("userData"), { recursive: true });
+  const serverLog = createWriteStream(startupLogPath(), { flags: "a" });
+  serverLog.write(`\n[${new Date().toISOString()}] Starting bundled server at ${localOrigin}\n`);
+  const runtimeModules = resolve(serverRoot, app.isPackaged ? "runtime" : "node_modules");
+  const inheritedNodePath = process.env.NODE_PATH?.trim();
   localServer = spawn(process.execPath, [serverEntry], {
     cwd: serverRoot,
     env: {
@@ -114,14 +146,33 @@ async function startBundledServer() {
       HOSTNAME: "127.0.0.1",
       PORT: String(port),
       NODE_ENV: "production",
+      NODE_PATH: inheritedNodePath
+        ? `${runtimeModules}${delimiter}${inheritedNodePath}`
+        : runtimeModules,
     },
-    stdio: app.isPackaged ? "ignore" : "inherit",
+    stdio: app.isPackaged ? ["ignore", "pipe", "pipe"] : "inherit",
     windowsHide: true,
   });
-  localServer.once("exit", () => {
-    localServer = null;
+  const startedServer = localServer;
+  let serverIsReady = false;
+  if (app.isPackaged) {
+    startedServer.stdout?.pipe(serverLog, { end: false });
+    startedServer.stderr?.pipe(serverLog, { end: false });
+  }
+  const serverExit = new Promise((_, reject) => {
+    startedServer.once("error", reject);
+    startedServer.once("exit", (code, signal) => {
+      serverLog.write(`[${new Date().toISOString()}] Server exited (code=${code ?? "none"}, signal=${signal ?? "none"}).\n`);
+      serverLog.end();
+      if (localServer === startedServer) localServer = null;
+      if (serverIsReady && !appIsQuitting) {
+        showStartupFailure(new Error(`The bundled Lighthouse server stopped unexpectedly (code ${code ?? "unknown"}).`));
+      }
+      reject(new Error(`The bundled Lighthouse server stopped during startup (code ${code ?? "unknown"}).`));
+    });
   });
-  await waitForServer(localOrigin);
+  await Promise.race([waitForServer(localOrigin), serverExit]);
+  serverIsReady = true;
   return localOrigin;
 }
 
@@ -244,13 +295,13 @@ function registerDesktopIpc() {
   });
 }
 
-async function createWindow(origin) {
+async function createWindow(origin = null) {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 960,
     minWidth: 1040,
     minHeight: 700,
-    show: false,
+    show: true,
     backgroundColor: "#140c07",
     autoHideMenuBar: true,
     icon: app.isPackaged
@@ -265,7 +316,6 @@ async function createWindow(origin) {
     },
   });
 
-  mainWindow.once("ready-to-show", () => mainWindow?.show());
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -274,11 +324,11 @@ async function createWindow(origin) {
     return { action: "deny" };
   });
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (isTrustedRendererUrl(url)) return;
+    if (isTrustedRendererUrl(url) || url.startsWith("data:text/html")) return;
     event.preventDefault();
     if (url.startsWith("https://") || url.startsWith("http://")) void shell.openExternal(url);
   });
-  await mainWindow.loadURL(`${origin}/staff`);
+  if (origin) await mainWindow.loadURL(`${origin}/staff`);
 }
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -295,15 +345,15 @@ if (!hasSingleInstanceLock) {
     Menu.setApplicationMenu(null);
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
     registerDesktopIpc();
+    await createWindow();
     const origin = await startBundledServer();
-    await createWindow(origin);
+    await mainWindow?.loadURL(`${origin}/staff`);
     configureUpdater();
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) void createWindow(origin);
     });
   }).catch((error) => {
-    console.error(error);
-    app.quit();
+    showStartupFailure(error);
   });
 }
 
@@ -312,6 +362,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
+  appIsQuitting = true;
   if (updateInterval) clearInterval(updateInterval);
   if (localServer) localServer.kill();
 });
