@@ -56,7 +56,13 @@ export function ensureFirebaseAuthReady() {
 export async function authenticateStaffWithPin(role: Role, password: string) {
   if (typeof window === "undefined" || !window.navigator.onLine) return null;
 
-  const apiOrigin = window.lighthouseDesktop ? "https://www.lighthousemoshi.com" : "";
+  if (window.lighthouseDesktop) {
+    const token = await window.lighthouseDesktop.authenticateStaff(role, password);
+    await setPersistence(firebaseAuth, browserLocalPersistence);
+    return signInWithCustomToken(firebaseAuth, token);
+  }
+
+  const apiOrigin = "";
   const response = await fetch(`${apiOrigin}/api/auth/pin`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

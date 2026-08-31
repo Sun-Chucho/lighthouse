@@ -5,6 +5,7 @@ import { sanitizeLighthouseHistory } from "@/app/lib/lighthouse-history";
 export const STORAGE_CASHIER_STATE = "lighthouse-cashier-state";
 export const STORAGE_KITCHEN_STATE = "lighthouse-kitchen-state";
 export const STORAGE_BARISTA_STATE = "lighthouse-barista-state";
+const ERRONEOUS_BOOKING_CLEANUP_MARKER = "lighthouse-maintenance-remove-60000-booking-v1";
 
 // All operational data uses one Lighthouse namespace shared by every role.
 export function getScopedStorageKey(baseKey: string): string {
@@ -21,6 +22,32 @@ export function getActiveBaristaStateKey(): string {
 
 export function getActiveKitchenStateKey(): string {
   return STORAGE_KITCHEN_STATE;
+}
+
+export function removeKnownErroneousCashierBooking() {
+  if (typeof window === "undefined" || localStorage.getItem(ERRONEOUS_BOOKING_CLEANUP_MARKER) === "1") {
+    return false;
+  }
+
+  const stateKey = getUnifiedLocalKey(STORAGE_CASHIER_STATE);
+  const rawState = localStorage.getItem(stateKey);
+  if (!rawState) return false;
+
+  try {
+    const state = JSON.parse(rawState) as CashierState<{ total?: unknown }>;
+    const transactions = Array.isArray(state.transactions) ? state.transactions : [];
+    const erroneousMatches = transactions.filter((booking) => Number(booking?.total) === 60_000);
+    if (transactions.length !== 2 || erroneousMatches.length !== 1) return false;
+
+    const nextTransactions = transactions.filter((booking) => booking !== erroneousMatches[0]);
+    const nextState = { ...state, transactions: nextTransactions };
+    localStorage.setItem(stateKey, JSON.stringify(nextState));
+    localStorage.setItem(getUnifiedLocalKey("lighthouse-cashier-transactions"), JSON.stringify(nextTransactions));
+    localStorage.setItem(ERRONEOUS_BOOKING_CLEANUP_MARKER, "1");
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 interface CashierState<TTransaction> {

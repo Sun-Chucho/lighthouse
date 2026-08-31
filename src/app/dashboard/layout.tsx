@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { normalizeRole } from "@/app/lib/auth";
 import { hydrateStorageKeyFromFirebase } from "@/app/lib/firebase-sync";
+import { removeKnownErroneousCashierBooking } from "@/app/lib/storage";
 import {
   MANAGER_SESSION_VERSION,
   STORAGE_MANAGER_SESSION_VERSION,
@@ -129,6 +130,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setActiveUsername(readActiveSessionUsername(savedRole));
     setSidebarOpen(window.innerWidth >= 768);
     setMounted(true);
+
+    removeKnownErroneousCashierBooking();
 
     void Promise.all(
       STARTUP_SYNC_KEYS_BY_ROLE[savedRole].map((key) => hydrateStorageKeyFromFirebase(key)),

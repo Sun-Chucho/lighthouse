@@ -25,6 +25,7 @@ export type LighthouseDesktopBridge = {
   isDesktop: true;
   platform: string;
   getVersion: () => Promise<string>;
+  authenticateStaff: (role: Role, password: string) => Promise<string>;
   storeVerifiedSession: (session: DesktopStaffSession) => Promise<boolean>;
   loadVerifiedSession: () => Promise<DesktopStaffSession | null>;
   clearVerifiedSession: () => Promise<boolean>;

@@ -70,16 +70,37 @@ function escapeReceiptText(value) {
     .replaceAll('"', "&quot;");
 }
 
-function findAvailablePort() {
-  return new Promise((resolvePort, reject) => {
+async function readPreferredRendererPort() {
+  const portFile = resolve(app.getPath("userData"), "renderer-port.txt");
+  try {
+    const savedPort = Number((await readFile(portFile, "utf8")).trim());
+    if (Number.isInteger(savedPort) && savedPort >= 1024 && savedPort <= 65535) return savedPort;
+  } catch {}
+
+  try {
+    const log = await readFile(startupLogPath(), "utf8");
+    const matches = [...log.matchAll(/Starting bundled server at http:\/\/127\.0\.0\.1:(\d+)/g)];
+    const previousPort = Number(matches.at(-1)?.[1]);
+    if (Number.isInteger(previousPort) && previousPort >= 1024 && previousPort <= 65535) return previousPort;
+  } catch {}
+
+  return null;
+}
+
+function findRendererPort(preferredPort) {
+  const tryPort = (port) => new Promise((resolvePort, rejectPort) => {
     const probe = createServer();
-    probe.once("error", reject);
-    probe.listen(0, "127.0.0.1", () => {
+    probe.once("error", rejectPort);
+    probe.listen(port, "127.0.0.1", () => {
       const address = probe.address();
-      const port = typeof address === "object" && address ? address.port : 0;
-      probe.close((error) => error ? reject(error) : resolvePort(port));
+      const selectedPort = typeof address === "object" && address ? address.port : 0;
+      probe.close((error) => error ? rejectPort(error) : resolvePort(selectedPort));
     });
   });
+
+  return preferredPort
+    ? tryPort(preferredPort).catch(() => tryPort(0))
+    : tryPort(0);
 }
 
 async function waitForServer(origin) {
@@ -131,9 +152,11 @@ async function startBundledServer() {
     throw new Error(`Lighthouse server bundle was not found at ${serverEntry}.`);
   }
 
-  const port = await findAvailablePort();
+  const preferredPort = await readPreferredRendererPort();
+  const port = await findRendererPort(preferredPort);
   localOrigin = `http://127.0.0.1:${port}`;
   await mkdir(app.getPath("userData"), { recursive: true });
+  await writeFile(resolve(app.getPath("userData"), "renderer-port.txt"), String(port), "utf8");
   const serverLog = createWriteStream(startupLogPath(), { flags: "a" });
   serverLog.write(`\n[${new Date().toISOString()}] Starting bundled server at ${localOrigin}\n`);
   const runtimeModules = resolve(serverRoot, app.isPackaged ? "runtime" : "node_modules");
@@ -223,6 +246,27 @@ function registerDesktopIpc() {
   ipcMain.handle("desktop:get-version", (event) => {
     assertTrustedSender(event);
     return app.getVersion();
+  });
+  ipcMain.handle("desktop:authenticate-staff", async (event, role, password) => {
+    assertTrustedSender(event);
+    if (
+      !["manager", "director", "inventory", "cashier", "kitchen", "barista"].includes(role)
+      || typeof password !== "string"
+      || password.length > 32
+    ) {
+      throw new Error("Invalid staff authentication request.");
+    }
+
+    const response = await net.fetch("https://www.lighthousemoshi.com/api/auth/pin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role, password }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || typeof payload.token !== "string") {
+      throw new Error(typeof payload.error === "string" ? payload.error : "Cloud role verification failed.");
+    }
+    return payload.token;
   });
   ipcMain.handle("desktop:store-session", async (event, staffSession) => {
     assertTrustedSender(event);

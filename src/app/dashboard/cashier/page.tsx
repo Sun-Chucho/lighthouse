@@ -8,7 +8,7 @@ import {
   getLighthouseRoomPrice,
 } from "@/app/lib/mock-data";
 import { readStoredRole } from "@/app/lib/auth";
-import { readCashierState, writeCashierState, getActiveCashierStateKey } from "@/app/lib/storage";
+import { readCashierState, writeCashierState, getActiveCashierStateKey, removeKnownErroneousCashierBooking } from "@/app/lib/storage";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -179,6 +179,7 @@ export default function BookingPage() {
 
   useEffect(() => {
     let cancelled = false;
+    removeKnownErroneousCashierBooking();
     setRole(readStoredRole() ?? "cashier");
     const applyCashierSnapshot = (incomingRooms?: Room[]) => {
       if (cancelled) return;

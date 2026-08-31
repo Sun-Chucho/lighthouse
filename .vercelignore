@@ -1,0 +1,14 @@
+node_modules
+.next
+.desktop-package
+.firebase
+.git
+.lh
+.tmp-electron-profile
+dist
+release
+firebase-service-account.json
+*.log
+*.tsbuildinfo
+_DSC*.JPG
+logo.jpeg

@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("lighthouseDesktop", {
   isDesktop: true,
   platform: process.platform,
   getVersion: () => ipcRenderer.invoke("desktop:get-version"),
+  authenticateStaff: (role, password) => ipcRenderer.invoke("desktop:authenticate-staff", role, password),
   storeVerifiedSession: (session) => ipcRenderer.invoke("desktop:store-session", session),
   loadVerifiedSession: () => ipcRenderer.invoke("desktop:load-session"),
   clearVerifiedSession: () => ipcRenderer.invoke("desktop:clear-session"),
