@@ -104,6 +104,7 @@ function hasRecentSyncSuccess() {
 }
 
 function getEffectiveConnectionState() {
+  if (!firebaseAuth.currentUser || firebaseAuth.currentUser.isAnonymous) return false;
   if (_firebaseRealtimeConnected) return true;
   if (hasRecentSyncSuccess()) return true;
   if (typeof window !== "undefined" && window.navigator.onLine && Object.keys(_lastSyncedAt).length > 0) return true;

@@ -1,6 +1,6 @@
 {
   "name": "lighthouse",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "productName": "Lighthouse Lodge",
   "description": "Offline-first Lighthouse Lodge operations, booking, inventory, and point-of-sale system.",
   "author": "Lighthouse Lodge",
@@ -21,6 +21,7 @@
     "firebase:verify-auth": "node scripts/verify-firebase-auth.mjs",
     "firebase:verify-client": "node scripts/verify-client-sync.mjs",
     "firebase:verify-database": "node scripts/verify-realtime-database.mjs",
+    "firebase:verify-production-sync": "node scripts/verify-production-realtime-sync.mjs",
     "firebase:verify": "node scripts/verify-firebase-admin.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"

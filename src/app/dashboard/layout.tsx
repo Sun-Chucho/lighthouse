@@ -10,9 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { normalizeRole } from "@/app/lib/auth";
-import { hydrateStorageKeyFromFirebase } from "@/app/lib/firebase-sync";
+import { hydrateStorageKeyFromFirebase, isFirebaseConnected } from "@/app/lib/firebase-sync";
+import { ensureStaffCloudAuthentication } from "@/app/lib/firebase";
 import { removeKnownErroneousCashierBooking } from "@/app/lib/storage";
 import {
+  getDefaultLoginPassword,
   MANAGER_SESSION_VERSION,
   STORAGE_MANAGER_SESSION_VERSION,
   readActiveSessionUsername,
@@ -133,14 +135,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     removeKnownErroneousCashierBooking();
 
-    void Promise.all(
-      STARTUP_SYNC_KEYS_BY_ROLE[savedRole].map((key) => hydrateStorageKeyFromFirebase(key)),
-    ).catch((error) => {
-      if (!cancelled) console.error("Dashboard hydration failed", error);
-    });
+    const authenticateAndSynchronize = async () => {
+      try {
+        await ensureStaffCloudAuthentication(savedRole, getDefaultLoginPassword(savedRole));
+        await Promise.all(
+          STARTUP_SYNC_KEYS_BY_ROLE[savedRole].map((key) => hydrateStorageKeyFromFirebase(key, true)),
+        );
+      } catch (error) {
+        if (!cancelled) console.error("Dashboard cloud authentication or hydration failed", error);
+      }
+    };
+
+    void authenticateAndSynchronize();
+    window.addEventListener("online", authenticateAndSynchronize);
+    const authenticationRetry = window.setInterval(() => {
+      if (window.navigator.onLine && !isFirebaseConnected()) void authenticateAndSynchronize();
+    }, 30_000);
 
     return () => {
       cancelled = true;
+      window.removeEventListener("online", authenticateAndSynchronize);
+      window.clearInterval(authenticationRetry);
     };
   }, [router]);
 

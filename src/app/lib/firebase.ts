@@ -53,6 +53,28 @@ export function ensureFirebaseAuthReady() {
   return authReadyPromise;
 }
 
+let staffAuthenticationPromise: ReturnType<typeof authenticateStaffWithPin> | null = null;
+
+export async function ensureStaffCloudAuthentication(role: Role, password: string) {
+  if (typeof window === "undefined" || !window.navigator.onLine) return null;
+
+  await firebaseAuth.authStateReady();
+  const currentUser = firebaseAuth.currentUser;
+  if (currentUser && !currentUser.isAnonymous) {
+    const token = await currentUser.getIdTokenResult();
+    if (token.claims.role === role || token.claims.staffRole === role) return currentUser;
+  }
+
+  if (!staffAuthenticationPromise) {
+    staffAuthenticationPromise = authenticateStaffWithPin(role, password)
+      .finally(() => {
+        staffAuthenticationPromise = null;
+      });
+  }
+
+  return staffAuthenticationPromise;
+}
+
 export async function authenticateStaffWithPin(role: Role, password: string) {
   if (typeof window === "undefined" || !window.navigator.onLine) return null;
 
