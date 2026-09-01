@@ -6,6 +6,7 @@ import {
 } from "@/app/lib/firebase-server";
 import { sanitizeLighthouseHistory } from "@/app/lib/lighthouse-history";
 import { getLighthouseAdminAuth } from "@/app/lib/firebase-admin-server";
+import { mergeSyncRecords } from "@/app/lib/sync-record-conflict";
 
 type RouteContext = {
   params: Promise<{
@@ -68,114 +69,6 @@ function getCashierReceiptSeq(value: unknown) {
   return Number.isFinite(receiptSeq) ? receiptSeq : 0;
 }
 
-function getRecordId(record: unknown) {
-  if (typeof record !== "object" || record === null) return null;
-  const id = (record as { id?: unknown }).id;
-  return typeof id === "string" && id.trim() ? id : null;
-}
-
-function getSettlementPriority(record: unknown) {
-  if (typeof record !== "object" || record === null) return 0;
-  const status = (record as { status?: unknown }).status;
-  if (status === "checked-out") return 3;
-  if (status === "completed") return 2;
-  if (status === "credit") return 1;
-  return 0;
-}
-
-function getRecordRevision(record: unknown) {
-  if (typeof record !== "object" || record === null) return 0;
-  const candidate = record as {
-    updatedAt?: unknown;
-    changedAt?: unknown;
-    lastExtendedAt?: unknown;
-    deliveredAt?: unknown;
-    paidOutAt?: unknown;
-    recordedAt?: unknown;
-    cancelledAt?: unknown;
-    closedAt?: unknown;
-    createdAt?: unknown;
-  };
-  const revision = Number(
-    candidate.updatedAt ??
-    candidate.changedAt ??
-    candidate.lastExtendedAt ??
-    candidate.deliveredAt ??
-    candidate.paidOutAt ??
-    candidate.recordedAt ??
-    candidate.cancelledAt ??
-    (typeof candidate.closedAt === "string" ? Date.parse(candidate.closedAt) : candidate.closedAt) ??
-    candidate.createdAt ??
-    0,
-  );
-  return Number.isFinite(revision) ? revision : 0;
-}
-
-function getManualPaymentRevision(record: unknown) {
-  if (typeof record !== "object" || record === null) return 0;
-  const revision = Number((record as { paymentMethodEditedAt?: unknown }).paymentMethodEditedAt ?? 0);
-  return Number.isFinite(revision) ? revision : 0;
-}
-
-function chooseRecordBySettlementPriority(currentRecord: unknown, incomingRecord: unknown) {
-  // Explicit receptionist payment edits must be accepted in both directions.
-  // In particular, moving a record from paid back to credit is intentional and
-  // must not be rejected merely because credit has a lower settlement priority.
-  const currentPaymentRevision = getManualPaymentRevision(currentRecord);
-  const incomingPaymentRevision = getManualPaymentRevision(incomingRecord);
-  if (currentPaymentRevision !== incomingPaymentRevision && Math.max(currentPaymentRevision, incomingPaymentRevision) > 0) {
-    return incomingPaymentRevision > currentPaymentRevision ? incomingRecord : currentRecord;
-  }
-
-  const currentPriority = getSettlementPriority(currentRecord);
-  const incomingPriority = getSettlementPriority(incomingRecord);
-  if (currentPriority !== incomingPriority) {
-    return incomingPriority > currentPriority ? incomingRecord : currentRecord;
-  }
-
-  const currentRevision = getRecordRevision(currentRecord);
-  const incomingRevision = getRecordRevision(incomingRecord);
-  if (currentRevision !== incomingRevision) {
-    return incomingRevision > currentRevision ? incomingRecord : currentRecord;
-  }
-
-  return incomingPriority >= currentPriority ? incomingRecord : currentRecord;
-}
-
-function sortByCreatedAtDesc(records: unknown[]) {
-  return records.sort((a, b) => {
-    const left = typeof a === "object" && a !== null ? Number((a as { createdAt?: unknown }).createdAt) : 0;
-    const right = typeof b === "object" && b !== null ? Number((b as { createdAt?: unknown }).createdAt) : 0;
-    return (Number.isFinite(right) ? right : 0) - (Number.isFinite(left) ? left : 0);
-  });
-}
-
-function mergeRecordsByIdPreservingIncomingChanges(currentRecords: unknown[], incomingRecords: unknown[]) {
-  const mergedById = new Map<string, unknown>();
-  const recordsWithoutId: unknown[] = [];
-
-  for (const record of currentRecords) {
-    const id = getRecordId(record);
-    if (id) {
-      mergedById.set(id, record);
-    } else {
-      recordsWithoutId.push(record);
-    }
-  }
-
-  for (const record of incomingRecords) {
-    const id = getRecordId(record);
-    if (id) {
-      const existingRecord = mergedById.get(id);
-      mergedById.set(id, existingRecord ? chooseRecordBySettlementPriority(existingRecord, record) : record);
-    } else {
-      recordsWithoutId.push(record);
-    }
-  }
-
-  return sortByCreatedAtDesc([...Array.from(mergedById.values()), ...recordsWithoutId]);
-}
-
 function protectIncomingSyncedValue(key: string, incomingValue: unknown, currentValue: unknown) {
   incomingValue = sanitizeLighthouseHistory(key, incomingValue);
   currentValue = sanitizeLighthouseHistory(key, currentValue);
@@ -192,7 +85,7 @@ function protectIncomingSyncedValue(key: string, incomingValue: unknown, current
 
     return {
       ...(typeof incomingValue === "object" && incomingValue !== null ? incomingValue : {}),
-      transactions: mergeRecordsByIdPreservingIncomingChanges(currentTransactions, incomingTransactions),
+      transactions: mergeSyncRecords(currentTransactions, incomingTransactions),
       receiptSeq: Math.max(currentSeq, incomingSeq),
     };
   }
@@ -222,9 +115,9 @@ function protectIncomingSyncedValue(key: string, incomingValue: unknown, current
 
     return {
       ...(typeof incomingValue === "object" && incomingValue !== null ? incomingValue : {}),
-      tickets: mergeRecordsByIdPreservingIncomingChanges(currentTickets, incomingTickets),
-      payments: mergeRecordsByIdPreservingIncomingChanges(currentPayments, incomingPayments),
-      menuItems: mergeRecordsByIdPreservingIncomingChanges(currentMenuItems, incomingMenuItems),
+      tickets: mergeSyncRecords(currentTickets, incomingTickets),
+      payments: mergeSyncRecords(currentPayments, incomingPayments),
+      menuItems: mergeSyncRecords(currentMenuItems, incomingMenuItems),
       ticketSeq: Math.max(
         Number.isFinite(currentSeq) ? currentSeq : 0,
         Number.isFinite(incomingSeq) ? incomingSeq : 0,
@@ -233,11 +126,11 @@ function protectIncomingSyncedValue(key: string, incomingValue: unknown, current
   }
 
   if (key === "lighthouse-company-stock" && Array.isArray(currentValue) && Array.isArray(incomingValue)) {
-    return mergeRecordsByIdPreservingIncomingChanges(currentValue, incomingValue);
+    return mergeSyncRecords(currentValue, incomingValue);
   }
 
   if (Array.isArray(currentValue) && Array.isArray(incomingValue)) {
-    return mergeRecordsByIdPreservingIncomingChanges(currentValue, incomingValue);
+    return mergeSyncRecords(currentValue, incomingValue);
   }
 
   return incomingValue;

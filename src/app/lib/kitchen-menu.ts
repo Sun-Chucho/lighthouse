@@ -19,6 +19,7 @@ export interface KitchenMenuItem {
   price: number;
   category: KitchenMenuCategory;
   prepMinutes: number;
+  updatedAt?: number;
 }
 
 export const KITCHEN_CATEGORY_OPTIONS: Array<{ value: KitchenMenuCategory; label: string }> = [

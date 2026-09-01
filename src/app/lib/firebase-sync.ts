@@ -1,4 +1,5 @@
 import { get, onValue, ref, remove, runTransaction, set } from "firebase/database";
+import { onIdTokenChanged } from "firebase/auth";
 import { ensureFirebaseAuthReady, firebaseAuth, firebaseDatabase } from "@/app/lib/firebase";
 import { getStoreItemLabel, type MainStoreItem } from "@/app/lib/inventory-transfer";
 import { mergeKitchenMenuItems, type KitchenMenuItem } from "@/app/lib/kitchen-menu";
@@ -6,6 +7,11 @@ import { getDefaultRooms, type InventoryItem } from "@/app/lib/mock-data";
 import { DEFAULT_HARDWARE_SETTINGS } from "@/app/lib/hardware-settings";
 import { sanitizeForStorage } from "@/app/lib/storage-sanitize";
 import { sanitizeLighthouseHistory } from "@/app/lib/lighthouse-history";
+import {
+  chooseIncomingSyncRecord,
+  getSyncRecordId,
+  mergeSyncRecords,
+} from "@/app/lib/sync-record-conflict";
 
 // ── Connectivity monitoring ─────────────────────────────────────────────────
 let _isConnected = false;
@@ -23,7 +29,10 @@ const DIRECT_FIREBASE_WRITE_TIMEOUT_MS = 15000;
 const SERVER_SYNC_FALLBACK_ENABLED = process.env.NEXT_PUBLIC_ENABLE_SERVER_SYNC_FALLBACK === "true";
 const SERVER_SYNC_ETAG_PREFIX = "lighthouse-server-sync-etag";
 const PENDING_SYNC_MARKER_PREFIX = "lighthouse-pending-sync";
-const PENDING_SYNC_MAX_AGE_MS = 60000;
+// Keep offline operational edits durable across reloads and extended outages.
+// One minute was shorter than a normal connectivity interruption and allowed
+// an old cloud menu to overwrite a locally saved manager price.
+const PENDING_SYNC_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const HYDRATION_DEDUP_WINDOW_MS = 2000;
 const _hydrationInFlight = new Map<string, Promise<void>>();
 const _lastHydratedAt: Record<string, number> = {};
@@ -585,18 +594,18 @@ function mergeCashierStateForSync(localValue: unknown, remoteValue: unknown) {
   const mergedById = new Map<string, unknown>();
 
   for (const transaction of remoteTransactions) {
-    const id = getRecordId(transaction);
+    const id = getSyncRecordId(transaction);
     if (id) {
       const existingRecord = mergedById.get(id);
-      mergedById.set(id, existingRecord ? chooseRecordBySettlementPriority(existingRecord, transaction) : transaction);
+      mergedById.set(id, existingRecord ? chooseIncomingSyncRecord(existingRecord, transaction) : transaction);
     }
   }
 
   for (const transaction of localTransactions) {
-    const id = getRecordId(transaction);
+    const id = getSyncRecordId(transaction);
     if (id) {
       const existingRecord = mergedById.get(id);
-      mergedById.set(id, existingRecord ? chooseRecordBySettlementPriority(existingRecord, transaction) : transaction);
+      mergedById.set(id, existingRecord ? chooseIncomingSyncRecord(existingRecord, transaction) : transaction);
     }
   }
 
@@ -620,141 +629,14 @@ function mergeCashierStateForSync(localValue: unknown, remoteValue: unknown) {
   };
 }
 
-function getRecordId(record: unknown) {
-  if (typeof record !== "object" || record === null) return null;
-  const id = (record as { id?: unknown }).id;
-  return typeof id === "string" && id.trim() ? id : null;
-}
-
-function getSettlementPriority(record: unknown) {
-  if (typeof record !== "object" || record === null) return 0;
-  const status = (record as { status?: unknown }).status;
-  if (status === "checked-out") return 3;
-  if (status === "completed") return 2;
-  if (status === "credit") return 1;
-  return 0;
-}
-
-function getRecordRevision(record: unknown) {
-  if (typeof record !== "object" || record === null) return 0;
-  const candidate = record as {
-    updatedAt?: unknown;
-    changedAt?: unknown;
-    lastExtendedAt?: unknown;
-    deliveredAt?: unknown;
-    paidOutAt?: unknown;
-    recordedAt?: unknown;
-    cancelledAt?: unknown;
-    closedAt?: unknown;
-    createdAt?: unknown;
-  };
-  const revision = Number(
-    candidate.updatedAt ??
-    candidate.changedAt ??
-    candidate.lastExtendedAt ??
-    candidate.deliveredAt ??
-    candidate.paidOutAt ??
-    candidate.recordedAt ??
-    candidate.cancelledAt ??
-    (typeof candidate.closedAt === "string" ? Date.parse(candidate.closedAt) : candidate.closedAt) ??
-    candidate.createdAt ??
-    0,
-  );
-  return Number.isFinite(revision) ? revision : 0;
-}
-
-function getManualPaymentRevision(record: unknown) {
-  if (typeof record !== "object" || record === null) return 0;
-  const revision = Number((record as { paymentMethodEditedAt?: unknown }).paymentMethodEditedAt ?? 0);
-  return Number.isFinite(revision) ? revision : 0;
-}
-
-function chooseRecordBySettlementPriority(currentRecord: unknown, incomingRecord: unknown) {
-  // A receptionist may intentionally move a settled payment back to credit.
-  // That is a lower settlement state, so the generic priority rule would
-  // otherwise restore the stale remote "completed" record. An explicit manual
-  // payment revision is authoritative in either direction.
-  const currentPaymentRevision = getManualPaymentRevision(currentRecord);
-  const incomingPaymentRevision = getManualPaymentRevision(incomingRecord);
-  if (currentPaymentRevision !== incomingPaymentRevision && Math.max(currentPaymentRevision, incomingPaymentRevision) > 0) {
-    return incomingPaymentRevision > currentPaymentRevision ? incomingRecord : currentRecord;
-  }
-
-  const currentPriority = getSettlementPriority(currentRecord);
-  const incomingPriority = getSettlementPriority(incomingRecord);
-  if (currentPriority !== incomingPriority) {
-    return incomingPriority > currentPriority ? incomingRecord : currentRecord;
-  }
-
-  const currentRevision = getRecordRevision(currentRecord);
-  const incomingRevision = getRecordRevision(incomingRecord);
-  if (currentRevision !== incomingRevision) {
-    return incomingRevision > currentRevision ? incomingRecord : currentRecord;
-  }
-
-  return incomingPriority > currentPriority ? incomingRecord : currentRecord;
-}
-
 function mergeRecordsById(localRecords: unknown[], remoteRecords: unknown[]) {
-  const mergedById = new Map<string, unknown>();
-  const recordsWithoutId: unknown[] = [];
-
-  for (const record of remoteRecords) {
-    const id = getRecordId(record);
-    if (id) {
-      const existingRecord = mergedById.get(id);
-      mergedById.set(id, existingRecord ? chooseRecordBySettlementPriority(existingRecord, record) : record);
-    } else {
-      recordsWithoutId.push(record);
-    }
-  }
-
-  for (const record of localRecords) {
-    const id = getRecordId(record);
-    if (id) {
-      const existingRecord = mergedById.get(id);
-      mergedById.set(id, existingRecord ? chooseRecordBySettlementPriority(existingRecord, record) : record);
-    } else {
-      recordsWithoutId.push(record);
-    }
-  }
-
-  return [...Array.from(mergedById.values()), ...recordsWithoutId].sort((a, b) => {
-    const left = typeof a === "object" && a !== null ? Number((a as { createdAt?: unknown; movedAt?: unknown; usedAt?: unknown; closedAt?: unknown }).createdAt ?? (a as { movedAt?: unknown }).movedAt ?? (a as { usedAt?: unknown }).usedAt ?? Date.parse(String((a as { closedAt?: unknown }).closedAt ?? ""))) : 0;
-    const right = typeof b === "object" && b !== null ? Number((b as { createdAt?: unknown; movedAt?: unknown; usedAt?: unknown; closedAt?: unknown }).createdAt ?? (b as { movedAt?: unknown }).movedAt ?? (b as { usedAt?: unknown }).usedAt ?? Date.parse(String((b as { closedAt?: unknown }).closedAt ?? ""))) : 0;
-    return (Number.isFinite(right) ? right : 0) - (Number.isFinite(left) ? left : 0);
-  });
+  // The local save is incoming authority. Revisions still protect a newer
+  // remote record from a stale browser write.
+  return mergeSyncRecords(remoteRecords, localRecords);
 }
 
 function mergeRecordsByIdWithRemoteWins(localRecords: unknown[], remoteRecords: unknown[]) {
-  const mergedById = new Map<string, unknown>();
-  const recordsWithoutId: unknown[] = [];
-
-  for (const record of localRecords) {
-    const id = getRecordId(record);
-    if (id) {
-      const existingRecord = mergedById.get(id);
-      mergedById.set(id, existingRecord ? chooseRecordBySettlementPriority(existingRecord, record) : record);
-    } else {
-      recordsWithoutId.push(record);
-    }
-  }
-
-  for (const record of remoteRecords) {
-    const id = getRecordId(record);
-    if (id) {
-      const existingRecord = mergedById.get(id);
-      mergedById.set(id, existingRecord ? chooseRecordBySettlementPriority(existingRecord, record) : record);
-    } else {
-      recordsWithoutId.push(record);
-    }
-  }
-
-  return [...Array.from(mergedById.values()), ...recordsWithoutId].sort((a, b) => {
-    const left = typeof a === "object" && a !== null ? Number((a as { createdAt?: unknown; movedAt?: unknown; usedAt?: unknown; closedAt?: unknown }).createdAt ?? (a as { movedAt?: unknown }).movedAt ?? (a as { usedAt?: unknown }).usedAt ?? Date.parse(String((a as { closedAt?: unknown }).closedAt ?? ""))) : 0;
-    const right = typeof b === "object" && b !== null ? Number((b as { createdAt?: unknown; movedAt?: unknown; usedAt?: unknown; closedAt?: unknown }).createdAt ?? (b as { movedAt?: unknown }).movedAt ?? (b as { usedAt?: unknown }).usedAt ?? Date.parse(String((b as { closedAt?: unknown }).closedAt ?? ""))) : 0;
-    return (Number.isFinite(right) ? right : 0) - (Number.isFinite(left) ? left : 0);
-  });
+  return mergeSyncRecords(localRecords, remoteRecords);
 }
 
 function mergeArrayRecordsForSync(localValue: unknown, remoteValue: unknown) {
@@ -1285,9 +1167,14 @@ export function subscribeToSyncedStorageKey<T>(key: string, onChange: (value: T 
   window.addEventListener("storage", handleStorageEvent);
 
   let firebaseUnsubscribe: () => void = () => {};
+  let firebaseAuthUnsubscribe: () => void = () => {};
+  let attachedFirebaseUid: string | null = null;
   let isDisposed = false;
   let pollTimer: number | null = null;
   let pendingReconcileTimer: number | null = null;
+  let firebaseRetryTimer: number | null = null;
+  let firebaseRetryDelayMs = 5000;
+  let retryFirebaseSubscription: () => void = () => undefined;
 
   const reconcileDurablePendingWrite = () => {
     if (isDisposed || !window.navigator.onLine || !hasPendingSyncMarker(key) || _pendingLocalWrites[key]) return;
@@ -1334,6 +1221,7 @@ export function subscribeToSyncedStorageKey<T>(key: string, onChange: (value: T 
 
   const resumeFallbackPolling = () => {
     if (document.visibilityState === "visible" && window.navigator.onLine) {
+      retryFirebaseSubscription();
       reconcileDurablePendingWrite();
       // Mobile browsers can suspend the realtime socket in the background.
       // Force one canonical read on resume so Payments never keeps an older
@@ -1358,13 +1246,20 @@ export function subscribeToSyncedStorageKey<T>(key: string, onChange: (value: T 
     pendingReconcileTimer = window.setInterval(reconcileDurablePendingWrite, 30000);
   }
 
-  void ensureFirebaseAuthReady()
-    .then(() => {
-      if (isDisposed) return;
+  const attachFirebaseSubscription = () => {
+    const currentUid = firebaseAuth.currentUser?.uid ?? null;
+    if (isDisposed || !currentUid || attachedFirebaseUid === currentUid) return;
 
-      firebaseUnsubscribe = onValue(
+    firebaseUnsubscribe();
+    attachedFirebaseUid = currentUid;
+    firebaseUnsubscribe = onValue(
         ref(firebaseDatabase, toStoragePath(key)),
         (snapshot) => {
+          firebaseRetryDelayMs = 5000;
+          if (firebaseRetryTimer !== null) {
+            window.clearTimeout(firebaseRetryTimer);
+            firebaseRetryTimer = null;
+          }
           if (!snapshot.exists()) {
             const fallbackValue = sanitizeForStorage((getLocalFallbackForSync(key) ?? getCanonicalDefaultValue(key)) as T | null);
             if (fallbackValue !== null) {
@@ -1396,9 +1291,43 @@ export function subscribeToSyncedStorageKey<T>(key: string, onChange: (value: T 
         (error) => {
           emitConnectionState(false);
           console.error(`Firebase subscription failed for ${key}`, error);
+          // Firebase cancels a realtime listener after permission/token errors.
+          // Clear the attachment guard and retry so a refreshed token or a
+          // recovered connection can restore live menu updates for this UID.
+          firebaseUnsubscribe = () => {};
+          attachedFirebaseUid = null;
           ensureFallbackPolling();
+          if (!isDisposed && firebaseRetryTimer === null) {
+            const retryDelay = firebaseRetryDelayMs;
+            firebaseRetryDelayMs = Math.min(firebaseRetryDelayMs * 2, 120000);
+            firebaseRetryTimer = window.setTimeout(() => {
+              firebaseRetryTimer = null;
+              attachFirebaseSubscription();
+            }, retryDelay);
+          }
         },
       );
+  };
+  retryFirebaseSubscription = attachFirebaseSubscription;
+
+  // Child pages can mount before the dashboard finishes exchanging its role
+  // PIN for a Firebase token. Observe authentication so the realtime listener
+  // attaches as soon as that token arrives instead of failing once forever.
+  firebaseAuthUnsubscribe = onIdTokenChanged(firebaseAuth, (user) => {
+    if (isDisposed) return;
+    if (!user) {
+      firebaseUnsubscribe();
+      firebaseUnsubscribe = () => {};
+      attachedFirebaseUid = null;
+      ensureFallbackPolling();
+      return;
+    }
+    attachFirebaseSubscription();
+  });
+
+  void ensureFirebaseAuthReady()
+    .then(() => {
+      attachFirebaseSubscription();
     })
     .catch((error) => {
       emitConnectionState(false);
@@ -1413,7 +1342,9 @@ export function subscribeToSyncedStorageKey<T>(key: string, onChange: (value: T 
     window.removeEventListener("online", resumeFallbackPolling);
     document.removeEventListener("visibilitychange", resumeFallbackPolling);
     firebaseUnsubscribe();
+    firebaseAuthUnsubscribe();
     stopFallbackPolling();
+    if (firebaseRetryTimer !== null) window.clearTimeout(firebaseRetryTimer);
     if (pendingReconcileTimer !== null) window.clearInterval(pendingReconcileTimer);
   };
 }

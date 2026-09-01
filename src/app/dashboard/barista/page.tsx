@@ -53,7 +53,12 @@ type BaristaCategory =
 type ServiceMode = "restaurant" | "room-service" | "take-away";
 type BaristaPaymentMethod = "cash" | "card" | "mobile" | "credit";
 type BaristaPaymentStatus = "completed" | "credit";
-type BaristaOrderLine = { name: string; qty: number };
+type BaristaOrderLine = {
+  name: string;
+  qty: number;
+  itemId?: string;
+  unitPrice?: number;
+};
 type SalesDateFilter = "day" | "week" | "month" | "all";
 type BaristaManagerPricingRow = {
   id: string;
@@ -80,6 +85,7 @@ interface BaristaMenuItem {
   barcode?: string;
   updatedAt?: number;
   deletedAt?: number;
+  sourceStoreItemId?: string;
   // Supplier cost, used only for manager costing — never shown in POS.
   buyingPrice?: number;
 }
@@ -321,6 +327,53 @@ function getLocalDateInputValue() {
 
 function normalizeBaristaTarget(name: string) {
   return normalizeBaristaProductTarget(name);
+}
+
+function normalizeBaristaMenuLink(name: string) {
+  return normalizeStockName(name.replace(/\s*\(?TOTS?\)?$/i, "").trim());
+}
+
+function getEditedBaristaStockLabel(
+  item: { name: string; size?: string },
+  previousMenuName: string,
+  nextMenuName: string,
+) {
+  const nextIsTotItem = /\s*\(?TOTS?\)?$/i.test(nextMenuName);
+  const nextStockLabel = nextMenuName.replace(/\s*\(?TOTS?\)?$/i, "").trim();
+  const currentLabel = item.size ? `${item.name} ${item.size}` : item.name;
+  const nextTarget = normalizeBaristaMenuLink(nextStockLabel);
+
+  // A menu display label may be composed from the stored base name, size and
+  // TOTS marker. Do not flatten that structure when only price/category changed.
+  if (
+    nextTarget === normalizeBaristaMenuLink(previousMenuName)
+    || nextTarget === normalizeBaristaMenuLink(currentLabel)
+  ) {
+    return { name: item.name, size: item.size ?? "" };
+  }
+
+  const currentSize = item.size?.trim() ?? "";
+  if (nextIsTotItem && currentSize) {
+    return { name: nextStockLabel, size: currentSize };
+  }
+  if (currentSize) {
+    const nextWords = nextStockLabel.split(/\s+/);
+    const sizeWords = currentSize.split(/\s+/);
+    const sizeSuffix = nextWords.slice(-sizeWords.length).join(" ");
+    if (normalizeStockName(sizeSuffix) === normalizeStockName(currentSize)) {
+      const baseName = nextWords.slice(0, -sizeWords.length).join(" ").trim();
+      if (baseName) return { name: baseName, size: currentSize };
+    }
+  }
+
+  const structuredSize = nextStockLabel.match(
+    /^(.+?)\s+((?:\d+(?:[.,]\d+)?)\s*(?:ml|cl|l|litres?|liters?|g|kg))$/i,
+  );
+  if (structuredSize) {
+    return { name: structuredSize[1].trim(), size: structuredSize[2].trim() };
+  }
+
+  return { name: nextStockLabel, size: "" };
 }
 
 function getBaristaInventoryLabel(item: Pick<InventoryItem, "name" | "size">) {
@@ -718,6 +771,42 @@ export default function BaristaPage() {
     [baristaStoreItems, storedMenuItems],
   );
 
+  useEffect(() => {
+    if (!posHydrated) return;
+    const latestItemsById = new Map(menuItems.map((item) => [item.id, item]));
+    const latestItemsByName = new Map(menuItems.map((item) => [normalizeBaristaMenuLink(item.name), item]));
+
+    // Only the active POS cart follows live menu changes. Historical-sale
+    // drafts and completed payment records must retain their original values.
+    setCart((current) => current.flatMap((line) => {
+      const latestItem = latestItemsById.get(line.item.id);
+      return latestItem ? [{ ...line, item: latestItem }] : [];
+    }));
+    setPendingOrder((current) => {
+      if (!current) return current;
+      const nextLines = current.lines.flatMap((line) => {
+        const latestItem = line.itemId
+          ? latestItemsById.get(line.itemId)
+          : latestItemsByName.get(normalizeBaristaMenuLink(line.name));
+        return latestItem
+          ? [{ ...line, itemId: latestItem.id, name: latestItem.name, unitPrice: latestItem.price }]
+          : [];
+      });
+      if (nextLines.length === 0) return null;
+      return {
+        ...current,
+        lines: nextLines,
+        total: nextLines.reduce((sum, line) => sum + (line.unitPrice ?? 0) * line.qty, 0),
+      };
+    });
+  }, [menuItems, posHydrated]);
+
+  useEffect(() => {
+    if (pendingOrder) return;
+    setShowSettlementPopup(false);
+    setShowPayNowPopup(false);
+  }, [pendingOrder]);
+
   const pastSaleItems = useMemo(() => {
     const normalizedSearch = normalizeStockName(pastSaleSearch);
     const searchTokens = normalizedSearch.split(" ").filter(Boolean);
@@ -763,7 +852,11 @@ export default function BaristaPage() {
       payment.lines?.forEach((line) => {
         const target = normalizeStockName(line.name);
         if (catalog.has(target)) return;
-        const inferredPrice = payment.lines?.length === 1 && line.qty > 0 ? payment.total / line.qty : 0;
+        const inferredPrice = typeof line.unitPrice === "number" && line.unitPrice > 0
+          ? line.unitPrice
+          : payment.lines?.length === 1 && line.qty > 0
+            ? payment.total / line.qty
+            : 0;
         addCandidate({
           id: `past-history-${target}`,
           name: line.name,
@@ -866,7 +959,7 @@ export default function BaristaPage() {
       if (!Array.isArray(payment.lines)) return;
 
       payment.lines.forEach((line) => {
-        const key = normalizeBaristaTarget(line.name);
+        const key = normalizeBaristaMenuLink(line.name);
         salesMap.set(key, (salesMap.get(key) ?? 0) + line.qty);
       });
     });
@@ -878,7 +971,7 @@ export default function BaristaPage() {
     const priceMap = new Map<string, number>();
 
     menuItems.forEach((item) => {
-      const key = normalizeBaristaTarget(item.name);
+      const key = normalizeBaristaMenuLink(item.name);
       if (typeof item.price === "number" && item.price > 0) {
         priceMap.set(key, item.price);
       }
@@ -891,7 +984,7 @@ export default function BaristaPage() {
     const priceMap = new Map<string, number>();
 
     menuItems.forEach((item) => {
-      const key = normalizeBaristaTarget(item.name);
+      const key = normalizeBaristaMenuLink(item.name);
       if (typeof item.buyingPrice === "number" && item.buyingPrice > 0) {
         priceMap.set(key, item.buyingPrice);
       }
@@ -904,7 +997,7 @@ export default function BaristaPage() {
     () =>
       baristaStoreItems.map((item) => {
         const inventoryMatch = resolveBaristaInventoryItem(item);
-        const menuBuyingPrice = baristaMenuBuyingPriceByItem.get(normalizeBaristaTarget(getStoreItemLabel(item)));
+        const menuBuyingPrice = baristaMenuBuyingPriceByItem.get(normalizeBaristaMenuLink(getStoreItemLabel(item)));
         const buyingPrice =
           typeof menuBuyingPrice === "number" && menuBuyingPrice > 0
             ? menuBuyingPrice
@@ -914,20 +1007,20 @@ export default function BaristaPage() {
               ? inventoryMatch.buyingPrice
               : 0;
         const sellingPrice =
-          typeof baristaMenuPriceByItem.get(normalizeBaristaTarget(getStoreItemLabel(item))) === "number" &&
-          (baristaMenuPriceByItem.get(normalizeBaristaTarget(getStoreItemLabel(item))) ?? 0) > 0
-            ? (baristaMenuPriceByItem.get(normalizeBaristaTarget(getStoreItemLabel(item))) ?? 0)
+          typeof baristaMenuPriceByItem.get(normalizeBaristaMenuLink(getStoreItemLabel(item))) === "number" &&
+          (baristaMenuPriceByItem.get(normalizeBaristaMenuLink(getStoreItemLabel(item))) ?? 0) > 0
+            ? (baristaMenuPriceByItem.get(normalizeBaristaMenuLink(getStoreItemLabel(item))) ?? 0)
             : typeof item.sellingPrice === "number" && item.sellingPrice > 0
             ? item.sellingPrice
             : typeof inventoryMatch?.sellingPrice === "number" && inventoryMatch.sellingPrice > 0
               ? inventoryMatch.sellingPrice
-              : typeof baristaMenuPriceByItem.get(normalizeBaristaTarget(getStoreItemLabel(item))) === "number" &&
-                (baristaMenuPriceByItem.get(normalizeBaristaTarget(getStoreItemLabel(item))) ?? 0) > 0
-                ? (baristaMenuPriceByItem.get(normalizeBaristaTarget(getStoreItemLabel(item))) ?? 0)
+              : typeof baristaMenuPriceByItem.get(normalizeBaristaMenuLink(getStoreItemLabel(item))) === "number" &&
+                (baristaMenuPriceByItem.get(normalizeBaristaMenuLink(getStoreItemLabel(item))) ?? 0) > 0
+                ? (baristaMenuPriceByItem.get(normalizeBaristaMenuLink(getStoreItemLabel(item))) ?? 0)
               : typeof inventoryMatch?.price === "number" && inventoryMatch.price > 0
                 ? inventoryMatch.price
                 : 0;
-        const quantitySold = baristaSalesByItem.get(normalizeBaristaTarget(getStoreItemLabel(item))) ?? 0;
+        const quantitySold = baristaSalesByItem.get(normalizeBaristaMenuLink(getStoreItemLabel(item))) ?? 0;
         const capital = item.stock * buyingPrice;
         const revenue = quantitySold * sellingPrice;
         const profitLoss = revenue - capital;
@@ -952,17 +1045,10 @@ export default function BaristaPage() {
   const baristaManagerPricingRows = useMemo(
     () =>
       menuItems.map((menuItem) => {
-        const target = normalizeBaristaTarget(menuItem.name);
-        const storeMatch = baristaStoreItems.find(
-          (entry) => normalizeBaristaTarget(getStoreItemLabel(entry)) === target,
-        );
-        const inventoryMatch = inventoryItems.find((entry) => {
-          const entryNames = [
-            entry.name,
-            entry.size ? `${entry.name} ${entry.size}` : entry.name,
-          ].map((value) => normalizeBaristaTarget(value));
-          return entryNames.includes(target);
-        });
+        const storeIndex = findLinkedBaristaStoreItemIndex(baristaStoreItems, menuItem);
+        const storeMatch = storeIndex >= 0 ? baristaStoreItems[storeIndex] : undefined;
+        const inventoryIndex = findLinkedBaristaInventoryItemIndex(inventoryItems, menuItem, storeMatch?.id);
+        const inventoryMatch = inventoryIndex >= 0 ? inventoryItems[inventoryIndex] : undefined;
         const buyingPrice =
           typeof menuItem.buyingPrice === "number" && menuItem.buyingPrice > 0
             ? menuItem.buyingPrice
@@ -974,7 +1060,7 @@ export default function BaristaPage() {
         const sellingPrice = typeof menuItem.price === "number" && menuItem.price > 0 ? menuItem.price : 0;
         const stock = typeof storeMatch?.stock === "number" ? storeMatch.stock : 0;
         const unit = storeMatch?.unit ?? "";
-        const quantitySold = baristaSalesByItem.get(target) ?? 0;
+        const quantitySold = baristaSalesByItem.get(normalizeBaristaMenuLink(menuItem.name)) ?? 0;
         return {
           id: menuItem.id,
           name: menuItem.name,
@@ -1047,41 +1133,36 @@ export default function BaristaPage() {
     const snapshot = readPosState<BaristaTicket, BaristaPaymentRecord, BaristaMenuItem>(
       activeBaristaKey, STORAGE_TICKETS, STORAGE_SEQ, STORAGE_PAYMENTS, STORAGE_MENU, 490,
     );
-    const target = normalizeBaristaTarget(item.name);
-    let matchedMenu = false;
-    const nextMenuItems = snapshot.menuItems.map((menuItem) => {
-      if (normalizeBaristaTarget(menuItem.name) !== target) return menuItem;
-      matchedMenu = true;
-      return { ...menuItem, buyingPrice, price: sellingPrice, updatedAt };
-    });
-    if (!matchedMenu) {
-      const menuReference = menuItems.find((menuItem) => normalizeBaristaTarget(menuItem.name) === target);
-      if (menuReference) {
-        nextMenuItems.push({ ...menuReference, buyingPrice, price: sellingPrice, updatedAt });
-      }
+    const persistedMenuItem = snapshot.menuItems.find((menuItem) => menuItem.id === item.id);
+    const menuReference = persistedMenuItem ?? menuItems.find((menuItem) => menuItem.id === item.id);
+    if (!menuReference) {
+      setSavingBaristaItemId("");
+      window.alert("This menu item is no longer available. Refresh the page and try again.");
+      return;
     }
-
     const allStoreItems = readJson<Array<MainStoreItem & { lane?: "kitchen" | "barista" }>>(STORAGE_MAIN_STORE_ITEMS) ?? [];
-    const index = allStoreItems.findIndex(
-      (entry) => entry.lane === "barista" && !entry.deletedAt && normalizeBaristaTarget(getStoreItemLabel(entry)) === target,
-    );
+    const index = findLinkedBaristaStoreItemIndex(allStoreItems, menuReference);
     let nextStoreItems: Array<MainStoreItem & { lane?: "kitchen" | "barista" }>;
+    let sourceStoreItemId: string;
     if (index >= 0) {
       // Add to the freshest persisted balance so a late sync cannot turn Stock In
       // into an accidental stock overwrite.
       stock = allStoreItems[index].stock + stockIn;
+      sourceStoreItemId = allStoreItems[index].id;
       nextStoreItems = allStoreItems.map((entry, idx) =>
         idx === index ? { ...entry, stock, buyingPrice, sellingPrice, updatedAt } : entry,
       );
     } else {
+      const exactTarget = normalizeBaristaMenuLink(menuReference.name);
       const seedRef = BARISTA_INVENTORY_SEED.find(
         (seed) =>
-          normalizeBaristaTarget(getBaristaInventoryLabel({ name: seed.name ?? "", size: seed.size ?? "" })) === target,
+          normalizeBaristaMenuLink(getBaristaInventoryLabel({ name: seed.name ?? "", size: seed.size ?? "" })) === exactTarget,
       );
+      sourceStoreItemId = `bs-${updatedAt}`;
       const newStoreItem: MainStoreItem & { lane: "barista" } = {
-        id: `bs-${updatedAt}`,
-        name: seedRef?.name ?? item.name,
-        subCategory: seedRef?.category ?? item.category ?? "Bar",
+        id: sourceStoreItemId,
+        name: seedRef?.name ?? menuReference.name,
+        subCategory: seedRef?.category ?? menuReference.category ?? "Bar",
         size: seedRef?.size ?? "",
         stock,
         unit: seedRef?.unit ?? "Bottle",
@@ -1094,35 +1175,37 @@ export default function BaristaPage() {
       nextStoreItems = [...allStoreItems, newStoreItem];
     }
 
+    const nextMenuItems = snapshot.menuItems.map((menuItem) =>
+      menuItem.id === menuReference.id
+        ? { ...menuItem, buyingPrice, price: sellingPrice, sourceStoreItemId, updatedAt }
+        : menuItem,
+    );
+    if (!persistedMenuItem) {
+      nextMenuItems.push({ ...menuReference, buyingPrice, price: sellingPrice, sourceStoreItemId, updatedAt });
+    }
+
     const allInventoryItems = readJson<InventoryItem[]>(STORAGE_INVENTORY_ITEMS) ?? [];
-    let matchedInventory = false;
-    const nextInventoryItems = allInventoryItems.map((inventoryItem) => {
-      if (inventoryItem.category.trim().toLowerCase() === "kitchen" || inventoryItem.status === "INACTIVE") return inventoryItem;
-      const inventoryTargets = [
-        inventoryItem.name,
-        inventoryItem.size ? `${inventoryItem.name} ${inventoryItem.size}` : inventoryItem.name,
-      ].map((value) => normalizeBaristaTarget(value));
-      if (!inventoryTargets.includes(target)) return inventoryItem;
-      matchedInventory = true;
-      return {
-        ...inventoryItem,
-        stock,
-        buyingPrice,
-        sellingPrice,
-        price: sellingPrice,
-        updatedAt,
-      };
-    });
-    if (!matchedInventory) {
-      const storeItem = nextStoreItems.find(
-        (entry) => entry.lane === "barista" && normalizeBaristaTarget(getStoreItemLabel(entry)) === target,
-      );
+    const inventoryIndex = findLinkedBaristaInventoryItemIndex(allInventoryItems, menuReference, sourceStoreItemId);
+    const nextInventoryItems = allInventoryItems.map((inventoryItem, idx) =>
+      idx === inventoryIndex
+        ? {
+            ...inventoryItem,
+            stock,
+            buyingPrice,
+            sellingPrice,
+            price: sellingPrice,
+            updatedAt,
+          }
+        : inventoryItem,
+    );
+    if (inventoryIndex < 0) {
+      const storeItem = nextStoreItems.find((entry) => entry.id === sourceStoreItemId);
       nextInventoryItems.unshift({
         id: `inv-manager-${updatedAt}`,
         barcode: "",
-        name: storeItem?.name ?? item.name,
+        name: storeItem?.name ?? menuReference.name,
         category: "Bar",
-        subCategory: storeItem?.subCategory ?? item.category,
+        subCategory: storeItem?.subCategory ?? menuReference.category,
         size: storeItem?.size ?? "",
         stock,
         totSold: 0,
@@ -1158,7 +1241,11 @@ export default function BaristaPage() {
     });
 
     try {
-      await Promise.all(writes);
+      const results = await Promise.all(writes);
+      if (results.some((result) => result === false)) {
+        window.alert("The values were saved on this device, but cloud synchronization is still pending. They will retry when the connection is restored.");
+        return;
+      }
       setSavedBaristaItemId(item.id);
       window.setTimeout(() => {
         setSavedBaristaItemId((current) => (current === item.id ? "" : current));
@@ -1308,7 +1395,9 @@ export default function BaristaPage() {
         }
 
         return payment.lines.map((line, index) => {
-          const price = baristaMenuPriceByItem.get(normalizeBaristaTarget(line.name)) ?? 0;
+          const price = typeof line.unitPrice === "number" && line.unitPrice > 0
+            ? line.unitPrice
+            : baristaMenuPriceByItem.get(normalizeBaristaMenuLink(line.name)) ?? 0;
           const amount = price > 0
             ? line.qty * price
             : payment.lines?.length === 1
@@ -1579,7 +1668,12 @@ export default function BaristaPage() {
         total: pastSaleTotal,
         status: pastSaleMethod === "credit" ? "credit" : "completed",
         method: pastSaleMethod,
-        lines: pastSaleCart.map((line) => ({ name: line.item.name, qty: line.qty })),
+        lines: pastSaleCart.map((line) => ({
+          itemId: line.item.id,
+          name: line.item.name,
+          qty: line.qty,
+          unitPrice: line.item.price,
+        })),
         historical: true,
         recordedAt,
       };
@@ -1642,7 +1736,12 @@ export default function BaristaPage() {
         mode: serviceMode,
         destination,
         roomNumber: serviceMode === "room-service" ? roomNumber.trim() : undefined,
-        lines: cart.map((line) => ({ name: line.item.name, qty: line.qty })),
+        lines: cart.map((line) => ({
+          itemId: line.item.id,
+          name: line.item.name,
+          qty: line.qty,
+          unitPrice: line.item.price,
+        })),
         total: subtotal,
       });
       setShowPayNowPopup(false);
@@ -1816,37 +1915,67 @@ export default function BaristaPage() {
     let next: BaristaMenuItem[];
     if (drinkEditId) {
       const previousItem = snapshot.menuItems.find((item) => item.id === drinkEditId);
-      next = snapshot.menuItems.map((item) =>
-        item.id === drinkEditId ? { ...item, name, price, category: drinkCategory, prepMinutes: prep, updatedAt } : item,
-      );
+      if (!previousItem) {
+        window.alert("This menu item is no longer available. Refresh the page and try again.");
+        return;
+      }
 
       // Keep the manager inventory and barista stock copies aligned with the
       // POS edit. Otherwise an edited name or price exists only in the menu
       // snapshot and appears stale on the other manager/barista screens.
-      if (previousItem) {
-        const previousTarget = normalizeBaristaTarget(previousItem.name);
-        const storedItems = readJson<Array<MainStoreItem & { lane?: "kitchen" | "barista" }>>(STORAGE_MAIN_STORE_ITEMS) ?? [];
-        const nextStoreItems = storedItems.map((item) =>
-          item.lane === "barista" && !item.deletedAt && normalizeBaristaTarget(getStoreItemLabel(item)) === previousTarget
-            ? { ...item, name, size: "", subCategory: drinkCategory, sellingPrice: price, updatedAt }
+      const storedItems = readJson<Array<MainStoreItem & { lane?: "kitchen" | "barista" }>>(STORAGE_MAIN_STORE_ITEMS) ?? [];
+      const storeItemIndex = findLinkedBaristaStoreItemIndex(storedItems, previousItem);
+      const sourceStoreItemId = storeItemIndex >= 0
+        ? storedItems[storeItemIndex].id
+        : previousItem.sourceStoreItemId;
+      next = snapshot.menuItems.map((item) =>
+        item.id === drinkEditId
+          ? {
+              ...item,
+              name,
+              price,
+              category: drinkCategory,
+              prepMinutes: prep,
+              sourceStoreItemId,
+              updatedAt,
+            }
+          : item,
+      );
+
+      if (storeItemIndex >= 0) {
+        const nextStoreLabel = getEditedBaristaStockLabel(
+          storedItems[storeItemIndex],
+          previousItem.name,
+          name,
+        );
+        const nextStoreItems = storedItems.map((item, index) =>
+          index === storeItemIndex
+            ? { ...item, ...nextStoreLabel, subCategory: drinkCategory, sellingPrice: price, updatedAt }
             : item,
         );
-        if (JSON.stringify(nextStoreItems) !== JSON.stringify(storedItems)) {
-          syncWrites.push(writeJson(STORAGE_MAIN_STORE_ITEMS, nextStoreItems));
-          setBaristaStoreItems(nextStoreItems.filter((item) => item.lane === "barista" && !item.deletedAt));
-        }
+        syncWrites.push(writeJson(STORAGE_MAIN_STORE_ITEMS, nextStoreItems));
+        setBaristaStoreItems(nextStoreItems.filter((item) => item.lane === "barista" && !item.deletedAt));
+      }
 
-        const storedInventory = readJson<InventoryItem[]>(STORAGE_INVENTORY_ITEMS) ?? [];
-        const nextInventory = storedInventory.map((item) => {
-          const labels = [item.name, item.size ? `${item.name} ${item.size}` : item.name];
-          return item.category.trim().toLowerCase() !== "kitchen" && item.status !== "INACTIVE" && labels.some((label) => normalizeBaristaTarget(label) === previousTarget)
-            ? { ...item, name, size: "", subCategory: drinkCategory, sellingPrice: price, price, updatedAt }
-            : item;
-        });
-        if (JSON.stringify(nextInventory) !== JSON.stringify(storedInventory)) {
-          syncWrites.push(writeJson(STORAGE_INVENTORY_ITEMS, nextInventory));
-          setInventoryItems(nextInventory);
-        }
+      const storedInventory = readJson<InventoryItem[]>(STORAGE_INVENTORY_ITEMS) ?? [];
+      const inventoryItemIndex = findLinkedBaristaInventoryItemIndex(
+        storedInventory,
+        previousItem,
+        sourceStoreItemId,
+      );
+      if (inventoryItemIndex >= 0) {
+        const nextInventoryLabel = getEditedBaristaStockLabel(
+          storedInventory[inventoryItemIndex],
+          previousItem.name,
+          name,
+        );
+        const nextInventory = storedInventory.map((item, index) =>
+          index === inventoryItemIndex
+            ? { ...item, ...nextInventoryLabel, subCategory: drinkCategory, sellingPrice: price, price, updatedAt }
+            : item,
+        );
+        syncWrites.push(writeJson(STORAGE_INVENTORY_ITEMS, nextInventory));
+        setInventoryItems(nextInventory);
       }
     } else {
       const quantity = Number(drinkQuantity);
@@ -1865,6 +1994,7 @@ export default function BaristaPage() {
         return;
       }
 
+      const sourceStoreItemId = `bs-${updatedAt}`;
       const newDrink: BaristaMenuItem = {
         id: `d-${updatedAt}`,
         name,
@@ -1872,6 +2002,7 @@ export default function BaristaPage() {
         category: drinkCategory,
         prepMinutes: prep,
         buyingPrice,
+        sourceStoreItemId,
         updatedAt,
       };
       next = [...snapshot.menuItems, newDrink];
@@ -1880,7 +2011,7 @@ export default function BaristaPage() {
       const nextStoreItems: Array<MainStoreItem & { lane?: "kitchen" | "barista" }> = [
         ...storedItems,
         {
-          id: `bs-${updatedAt}`,
+          id: sourceStoreItemId,
           name,
           subCategory: drinkCategory,
           size: drinkSize.trim(),
@@ -3230,6 +3361,69 @@ export default function BaristaPage() {
 
 function getLinkedRecordToken(id: string) {
   return id.match(/(\d{10,})$/)?.[1] ?? null;
+}
+
+function hasLinkedRecordId(candidateId: string, linkedIds: Array<string | undefined>) {
+  const candidateToken = getLinkedRecordToken(candidateId);
+  return candidateToken !== null && linkedIds.some((id) => id && getLinkedRecordToken(id) === candidateToken);
+}
+
+function findLinkedBaristaStoreItemIndex(
+  items: Array<MainStoreItem & { lane?: "kitchen" | "barista" }>,
+  menuItem: BaristaMenuItem,
+) {
+  const isActiveBaristaItem = (item: MainStoreItem & { lane?: "kitchen" | "barista" }) =>
+    item.lane === "barista" && !item.deletedAt;
+  if (menuItem.sourceStoreItemId) {
+    const sourceIndex = items.findIndex(
+      (item) => isActiveBaristaItem(item) && item.id === menuItem.sourceStoreItemId,
+    );
+    if (sourceIndex >= 0) return sourceIndex;
+  }
+
+  const linkedIds = [menuItem.id, menuItem.sourceStoreItemId];
+  const linkedIndex = items.findIndex(
+    (item) => isActiveBaristaItem(item) && hasLinkedRecordId(item.id, linkedIds),
+  );
+  if (linkedIndex >= 0) return linkedIndex;
+
+  const exactTarget = normalizeBaristaMenuLink(menuItem.name);
+  const exactIndex = items.findIndex(
+    (item) => isActiveBaristaItem(item) && normalizeBaristaMenuLink(getStoreItemLabel(item)) === exactTarget,
+  );
+  if (exactIndex >= 0) return exactIndex;
+  if (/\s*\(?TOTS?\)?$/i.test(menuItem.name)) {
+    return items.findIndex(
+      (item) => isActiveBaristaItem(item) && normalizeBaristaMenuLink(item.name) === exactTarget,
+    );
+  }
+  return -1;
+}
+
+function findLinkedBaristaInventoryItemIndex(
+  items: InventoryItem[],
+  menuItem: BaristaMenuItem,
+  sourceStoreItemId?: string,
+) {
+  const isActiveBaristaItem = (item: InventoryItem) =>
+    item.category.trim().toLowerCase() !== "kitchen" && item.status !== "INACTIVE";
+  const exactIdIndex = items.findIndex(
+    (item) => isActiveBaristaItem(item) && item.id === menuItem.id,
+  );
+  if (exactIdIndex >= 0) return exactIdIndex;
+
+  const linkedIds = [menuItem.id, menuItem.sourceStoreItemId, sourceStoreItemId];
+  const linkedIndex = items.findIndex(
+    (item) => isActiveBaristaItem(item) && hasLinkedRecordId(item.id, linkedIds),
+  );
+  if (linkedIndex >= 0) return linkedIndex;
+
+  const exactTarget = normalizeBaristaMenuLink(menuItem.name);
+  return items.findIndex((item) => {
+    if (!isActiveBaristaItem(item)) return false;
+    const labels = [item.name, item.size ? `${item.name} ${item.size}` : item.name];
+    return labels.some((label) => normalizeBaristaMenuLink(label) === exactTarget);
+  });
 }
 
 function isActiveBaristaMenuItem(item: BaristaMenuItem) {

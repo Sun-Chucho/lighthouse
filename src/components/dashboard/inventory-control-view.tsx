@@ -6,7 +6,6 @@ import { InventoryItem } from "@/app/lib/mock-data";
 import {
   getStoreItemLabel,
   MainStoreItem,
-  normalizeBaristaProductTarget,
   normalizeStockName,
   STORAGE_INVENTORY_ITEMS,
   STORAGE_MAIN_STORE_ITEMS,
@@ -26,7 +25,7 @@ import {
   STORAGE_KITCHEN_DAILY_STOCK_HISTORY,
   STORAGE_KITCHEN_PURCHASE_HISTORY,
 } from "@/app/lib/kitchen-session-storage";
-import { readJson, readPosState, STORAGE_BARISTA_STATE, STORAGE_KITCHEN_STATE, writeJson } from "@/app/lib/storage";
+import { readJson, readPosState, STORAGE_BARISTA_STATE, STORAGE_KITCHEN_STATE, writeJson, writePosState } from "@/app/lib/storage";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -62,12 +61,40 @@ interface PosPaymentRecord {
   status?: "completed" | "credit";
   method?: string;
   total: number;
-  lines?: Array<{ name: string; qty: number }>;
+  lines?: Array<{ name: string; qty: number; itemId?: string; unitPrice?: number }>;
 }
 
 interface PosStateSnapshot {
   payments?: PosPaymentRecord[];
-  menuItems?: Array<{ name: string; price: number }>;
+  menuItems?: SyncedBaristaMenuItem[];
+}
+
+type SyncedBaristaCategory =
+  | "espresso"
+  | "coffee"
+  | "tea"
+  | "beer"
+  | "wine"
+  | "spirits"
+  | "cider"
+  | "soft-drinks"
+  | "water-juice"
+  | "energy-drinks"
+  | "malt"
+  | "cold"
+  | "snacks";
+
+interface SyncedBaristaMenuItem {
+  id: string;
+  name: string;
+  price: number;
+  category: SyncedBaristaCategory;
+  prepMinutes: number;
+  barcode?: string;
+  buyingPrice?: number;
+  updatedAt?: number;
+  deletedAt?: number;
+  sourceStoreItemId?: string;
 }
 
 const KITCHEN_CATEGORY_OPTIONS = [
@@ -99,6 +126,114 @@ const BARISTA_CATEGORY_OPTIONS = [
 ] as const;
 
 const BARISTA_CATEGORY_KEYS = new Set(BARISTA_CATEGORY_OPTIONS.map((value) => normalizeStockName(value)));
+
+function normalizeBaristaMenuLink(value: string) {
+  return normalizeStockName(value.replace(/\s*\(?TOTS?\)?$/i, "").trim());
+}
+
+function normalizeBaristaMenuCategory(value: string, itemName: string): SyncedBaristaCategory {
+  const normalizedValue = normalizeStockName(value);
+  const normalizedName = normalizeStockName(itemName);
+  if (["espresso", "coffee", "tea", "cold", "snacks", "beer", "wine", "cider", "malt"].includes(normalizedValue)) {
+    return normalizedValue as SyncedBaristaCategory;
+  }
+  if (["soft drink", "soft drinks", "soda"].includes(normalizedValue)) return "soft-drinks";
+  if (["energy drink", "energy drinks"].includes(normalizedValue)) return "energy-drinks";
+  if (["water", "juice", "water juice"].includes(normalizedValue)) return "water-juice";
+  if (["spirit", "spirits", "whisky", "gin", "liqueur", "cognac", "aperitif", "vodka", "rum", "brandy"].includes(normalizedValue)) return "spirits";
+  if (normalizedName.includes("tea")) return "tea";
+  if (normalizedName.includes("beer") || normalizedName.includes("lager")) return "beer";
+  if (normalizedName.includes("wine")) return "wine";
+  if (normalizedName.includes("cider")) return "cider";
+  if (normalizedName.includes("energy")) return "energy-drinks";
+  if (normalizedName.includes("water") || normalizedName.includes("juice")) return "water-juice";
+  return "coffee";
+}
+
+function syncInventoryItemToBaristaPos({
+  sourceId,
+  previousLabel,
+  name,
+  size,
+  category,
+  price,
+  buyingPrice,
+  barcode,
+  status,
+  updatedAt,
+}: {
+  sourceId: string;
+  previousLabel: string;
+  name: string;
+  size: string;
+  category: string;
+  price: number;
+  buyingPrice: number;
+  barcode?: string;
+  status: "ACTIVE" | "INACTIVE";
+  updatedAt: number;
+}) {
+  const snapshot = readPosState<unknown, unknown, SyncedBaristaMenuItem>(
+    STORAGE_BARISTA_STATE,
+    "lighthouse-barista-orders",
+    "lighthouse-barista-seq",
+    "lighthouse-barista-payments",
+    "lighthouse-barista-menu",
+    1,
+  );
+  const nextLabel = size.trim() ? `${name.trim()} ${size.trim()}` : name.trim();
+  const previousTarget = normalizeBaristaMenuLink(previousLabel);
+  const previousBaseTarget = normalizeBaristaMenuLink(name);
+  const hasStableLink = snapshot.menuItems.some((menuItem) => menuItem.sourceStoreItemId === sourceId);
+  let matched = false;
+  const nextMenuItems = snapshot.menuItems.map((menuItem) => {
+    const target = normalizeBaristaMenuLink(menuItem.name);
+    const isStableMatch = menuItem.sourceStoreItemId === sourceId;
+    const isLegacyMatch = !hasStableLink && !matched && !menuItem.sourceStoreItemId && (
+      target === previousTarget
+      || (/\s*\(?TOTS?\)?$/i.test(menuItem.name) && target === previousBaseTarget)
+    );
+    if (!isStableMatch && !isLegacyMatch) return menuItem;
+    matched = true;
+    if (status === "INACTIVE") {
+      return { ...menuItem, deletedAt: updatedAt, updatedAt };
+    }
+    const activeMenuItem = { ...menuItem };
+    delete activeMenuItem.deletedAt;
+    return {
+      ...activeMenuItem,
+      name: nextLabel,
+      price,
+      buyingPrice,
+      barcode: barcode ?? menuItem.barcode,
+      category: normalizeBaristaMenuCategory(category, nextLabel),
+      sourceStoreItemId: sourceId,
+      updatedAt,
+    };
+  });
+
+  if (!matched && status === "ACTIVE") {
+    nextMenuItems.push({
+      id: `inventory-menu-${sourceId}`,
+      name: nextLabel,
+      price,
+      buyingPrice,
+      barcode: barcode ?? "",
+      category: normalizeBaristaMenuCategory(category, nextLabel),
+      prepMinutes: 2,
+      sourceStoreItemId: sourceId,
+      updatedAt,
+    });
+  }
+
+  return writePosState(
+    STORAGE_BARISTA_STATE,
+    snapshot.tickets,
+    snapshot.ticketSeq,
+    snapshot.payments,
+    nextMenuItems,
+  );
+}
 
 function getStockLabel(stock: number, minStock: number) {
   if (stock <= 0) return "Out";
@@ -163,7 +298,7 @@ function getDailyEntryTotals(entry: KitchenDailyStockHistoryEntry) {
 }
 
 function normalizeBaristaFinanceTarget(value: string) {
-  return normalizeBaristaProductTarget(value);
+  return normalizeBaristaMenuLink(value);
 }
 
 function toDayKey(createdAt: number | undefined) {
@@ -182,10 +317,13 @@ function getNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function normalizePaymentLine(line: { name: string; qty: number }) {
+function normalizePaymentLine(line: { name: string; qty: number; itemId?: string; unitPrice?: number }) {
+  const unitPrice = getNumber(line.unitPrice);
   return {
     name: typeof line.name === "string" ? line.name : "Item",
     qty: getNumber(line.qty),
+    itemId: typeof line.itemId === "string" ? line.itemId : undefined,
+    unitPrice: unitPrice > 0 ? unitPrice : undefined,
   };
 }
 
@@ -364,7 +502,9 @@ export function InventoryControlView({
       setKitchenPayments(Array.isArray(kitchenState?.payments) ? kitchenState.payments : []);
       setKitchenMenuItems(Array.isArray(kitchenState?.menuItems) ? kitchenState.menuItems : []);
       setBaristaPayments(Array.isArray(baristaState?.payments) ? baristaState.payments : []);
-      setBaristaMenuItems(Array.isArray(baristaState?.menuItems) ? baristaState.menuItems : []);
+      setBaristaMenuItems(
+        Array.isArray(baristaState?.menuItems) ? baristaState.menuItems.filter((item) => !item.deletedAt) : [],
+      );
       setKitchenPurchaseHistory(readJson<KitchenPurchaseHistoryEntry[]>(STORAGE_KITCHEN_PURCHASE_HISTORY) ?? []);
       setKitchenDailyHistory(readJson<KitchenDailyStockHistoryEntry[]>(STORAGE_KITCHEN_DAILY_STOCK_HISTORY) ?? []);
       setBaristaPurchaseHistory(readJson<KitchenPurchaseHistoryEntry[]>(STORAGE_BARISTA_PURCHASE_HISTORY) ?? []);
@@ -403,10 +543,22 @@ export function InventoryControlView({
     };
   }, []);
 
-  const kitchenStore = useMemo(() => storeItems.filter((item) => item.lane === "kitchen"), [storeItems]);
-  const baristaStore = useMemo(() => storeItems.filter((item) => item.lane === "barista"), [storeItems]);
-  const kitchenInventoryItems = useMemo(() => items.filter((item) => item.category === "Kitchen"), [items]);
-  const baristaInventoryItems = useMemo(() => items.filter((item) => item.category === "Bar"), [items]);
+  const kitchenStore = useMemo(
+    () => storeItems.filter((item) => item.lane === "kitchen" && !item.deletedAt),
+    [storeItems],
+  );
+  const baristaStore = useMemo(
+    () => storeItems.filter((item) => item.lane === "barista" && !item.deletedAt),
+    [storeItems],
+  );
+  const kitchenInventoryItems = useMemo(
+    () => items.filter((item) => item.category === "Kitchen" && item.status !== "INACTIVE"),
+    [items],
+  );
+  const baristaInventoryItems = useMemo(
+    () => items.filter((item) => item.category === "Bar" && item.status !== "INACTIVE"),
+    [items],
+  );
   const filteredKitchenStore = useMemo(
     () => kitchenStore.filter((item) => matchesInventorySearch(item, inventorySearchTerm)),
     [inventorySearchTerm, kitchenStore],
@@ -468,7 +620,7 @@ export function InventoryControlView({
         }
 
         return lines.map((line, index) => {
-          const price = kitchenMenuPriceByItem.get(normalizeStockName(line.name)) ?? 0;
+          const price = line.unitPrice ?? kitchenMenuPriceByItem.get(normalizeStockName(line.name)) ?? 0;
           const amount = price > 0
             ? line.qty * price
             : lines.length === 1
@@ -503,7 +655,7 @@ export function InventoryControlView({
 
   const resolveBaristaInventoryMatch = (item: MainStoreItem) =>
     items.find((entry) => {
-      if (entry.category !== "Bar") return false;
+      if (entry.category !== "Bar" || entry.status === "INACTIVE") return false;
 
       const storeTargets = [
         item.name,
@@ -633,7 +785,7 @@ export function InventoryControlView({
         }
 
         return lines.map((line, index) => {
-          const price = baristaMenuPriceByItem.get(normalizeBaristaFinanceTarget(line.name)) ?? 0;
+          const price = line.unitPrice ?? baristaMenuPriceByItem.get(normalizeBaristaFinanceTarget(line.name)) ?? 0;
           const amount = price > 0
             ? line.qty * price
             : lines.length === 1
@@ -689,7 +841,7 @@ export function InventoryControlView({
     setBaristaSellingPrice("");
   };
 
-  const saveInlineSellingPrice = (lane: StoreLane, itemId: string, rawValue: string) => {
+  const saveInlineSellingPrice = async (lane: StoreLane, itemId: string, rawValue: string) => {
     if (!canEditStock) return;
 
     const sellingPrice = Number(rawValue);
@@ -722,8 +874,29 @@ export function InventoryControlView({
 
     setStoreItems(nextStoreItems);
     setItems(nextInventoryItems);
-    writeJson(STORAGE_MAIN_STORE_ITEMS, nextStoreItems);
-    writeJson(STORAGE_INVENTORY_ITEMS, nextInventoryItems);
+    const writes = [
+      writeJson(STORAGE_MAIN_STORE_ITEMS, nextStoreItems),
+      writeJson(STORAGE_INVENTORY_ITEMS, nextInventoryItems),
+    ];
+    if (lane === "barista") {
+      const linkedInventory = nextInventoryItems.find((item) => inventoryMatchesStoreItem(item, lane, matchingStore));
+      writes.push(syncInventoryItemToBaristaPos({
+        sourceId: matchingStore.id,
+        previousLabel: getStoreItemLabel(matchingStore),
+        name: matchingStore.name,
+        size: matchingStore.size ?? "",
+        category: matchingStore.subCategory ?? linkedInventory?.subCategory ?? linkedInventory?.category ?? "Bar",
+        price: sellingPrice,
+        buyingPrice: matchingStore.buyingPrice ?? linkedInventory?.buyingPrice ?? 0,
+        barcode: linkedInventory?.barcode,
+        status: linkedInventory?.status ?? "ACTIVE",
+        updatedAt,
+      }));
+    }
+    const results = await Promise.all(writes.filter((write): write is Promise<boolean> => Boolean(write)));
+    if (results.some((result) => result === false)) {
+      window.alert("The price was saved on this device. Cloud synchronization is pending and will retry automatically.");
+    }
   };
 
   const openEditModal = (lane: StoreLane, item: MainStoreItem) => {
@@ -817,7 +990,7 @@ export function InventoryControlView({
     const nextStoreItems = [nextStoreRecord, ...storeItems];
 
     setStoreItems(nextStoreItems);
-    writeJson(STORAGE_MAIN_STORE_ITEMS, nextStoreItems);
+    const writes = [writeJson(STORAGE_MAIN_STORE_ITEMS, nextStoreItems)];
 
     const nextInventoryItems = [...items];
     const category = lane === "kitchen" ? "Kitchen" : "Bar";
@@ -841,7 +1014,25 @@ export function InventoryControlView({
       updatedAt,
     });
     setItems(nextInventoryItems);
-    writeJson(STORAGE_INVENTORY_ITEMS, nextInventoryItems);
+    writes.push(writeJson(STORAGE_INVENTORY_ITEMS, nextInventoryItems));
+    if (lane === "barista") {
+      writes.push(syncInventoryItemToBaristaPos({
+        sourceId: nextStoreRecord.id,
+        previousLabel: getStoreItemLabel(nextStoreRecord),
+        name: nextStoreRecord.name,
+        size: nextStoreRecord.size ?? "",
+        category: nextStoreRecord.subCategory ?? "Bar",
+        price: sellingPrice,
+        buyingPrice: nextStoreRecord.buyingPrice ?? 0,
+        barcode: "",
+        status: "ACTIVE",
+        updatedAt,
+      }));
+    }
+    const results = await Promise.all(writes.filter((write): write is Promise<boolean> => Boolean(write)));
+    if (results.some((result) => result === false)) {
+      window.alert("The item was saved on this device. Cloud synchronization is pending and will retry automatically.");
+    }
     resetStoreForm(lane);
   };
 
@@ -879,6 +1070,7 @@ export function InventoryControlView({
     });
     if (!approved) return;
     const updatedAt = Date.now();
+    const originalStoreItem = storeItems.find((item) => item.id === editModal.itemId);
 
     const nextStoreItems = storeItems.map((item) =>
       item.id === editModal.itemId
@@ -921,8 +1113,35 @@ export function InventoryControlView({
 
     setStoreItems(nextStoreItems);
     setItems(nextInventoryItems);
-    writeJson(STORAGE_MAIN_STORE_ITEMS, nextStoreItems);
-    writeJson(STORAGE_INVENTORY_ITEMS, nextInventoryItems);
+    const writes = [
+      writeJson(STORAGE_MAIN_STORE_ITEMS, nextStoreItems),
+      writeJson(STORAGE_INVENTORY_ITEMS, nextInventoryItems),
+    ];
+    if (editModal.lane === "barista" && originalStoreItem) {
+      const linkedInventory = nextInventoryItems.find((item) =>
+        inventoryMatchesStoreItem(item, "barista", {
+          name: editModal.name.trim(),
+          size: editModal.size.trim(),
+          subCategory: editModal.category.trim(),
+        }),
+      );
+      writes.push(syncInventoryItemToBaristaPos({
+        sourceId: originalStoreItem.id,
+        previousLabel: getStoreItemLabel(originalStoreItem),
+        name: editModal.name.trim(),
+        size: editModal.size.trim(),
+        category: editModal.category.trim(),
+        price: sellingPrice,
+        buyingPrice,
+        barcode: linkedInventory?.barcode,
+        status: editModal.status,
+        updatedAt,
+      }));
+    }
+    const results = await Promise.all(writes.filter((write): write is Promise<boolean> => Boolean(write)));
+    if (results.some((result) => result === false)) {
+      window.alert("The item was saved on this device. Cloud synchronization is pending and will retry automatically.");
+    }
     setEditModal(null);
   };
 
@@ -939,20 +1158,73 @@ export function InventoryControlView({
     });
     if (!approved) return;
 
-    const nextItems = items.filter((item) => item.category !== destinationCategory);
-    const nextStoreItems = storeItems.filter((item) => item.lane !== lane);
+    const updatedAt = Date.now();
+    const removedStoreItems = storeItems.filter((item) => item.lane === lane && !item.deletedAt);
+    const nextItems = items.map((item) =>
+      item.category === destinationCategory && item.status !== "INACTIVE"
+        ? { ...item, stock: 0, status: "INACTIVE" as const, updatedAt }
+        : item,
+    );
+    const nextStoreItems = storeItems.map((item) =>
+      item.lane === lane && !item.deletedAt
+        ? { ...item, stock: 0, deletedAt: updatedAt, updatedAt }
+        : item,
+    );
 
     setItems(nextItems);
     setStoreItems(nextStoreItems);
 
-    writeJson(STORAGE_INVENTORY_ITEMS, nextItems);
-    writeJson(STORAGE_MAIN_STORE_ITEMS, nextStoreItems);
+    const writes = [
+      writeJson(STORAGE_INVENTORY_ITEMS, nextItems),
+      writeJson(STORAGE_MAIN_STORE_ITEMS, nextStoreItems),
+    ];
 
     if (lane === "kitchen") {
+      const results = await Promise.all(writes.filter((write): write is Promise<boolean> => Boolean(write)));
+      if (results.some((result) => result === false)) {
+        window.alert("The Kitchen inventory was cleared on this device. Cloud synchronization is pending and will retry automatically.");
+      }
       resetStoreForm("kitchen");
       return;
     }
 
+    const removedIds = new Set(removedStoreItems.map((item) => item.id));
+    const removedLabels = new Set(removedStoreItems.map((item) => normalizeBaristaMenuLink(getStoreItemLabel(item))));
+    const removedBaseLabels = new Set(removedStoreItems.map((item) => normalizeBaristaMenuLink(item.name)));
+    const removedTokens = new Set(
+      removedStoreItems
+        .map((item) => item.id.match(/(\d{10,})$/)?.[1])
+        .filter((token): token is string => Boolean(token)),
+    );
+    const snapshot = readPosState<unknown, unknown, SyncedBaristaMenuItem>(
+      STORAGE_BARISTA_STATE,
+      "lighthouse-barista-orders",
+      "lighthouse-barista-seq",
+      "lighthouse-barista-payments",
+      "lighthouse-barista-menu",
+      1,
+    );
+    const nextMenuItems = snapshot.menuItems.map((menuItem) => {
+      const linkedById = Boolean(menuItem.sourceStoreItemId && removedIds.has(menuItem.sourceStoreItemId));
+      const menuToken = menuItem.id.match(/(\d{10,})$/)?.[1];
+      const linkedLegacyItem = !menuItem.sourceStoreItemId && (
+        removedLabels.has(normalizeBaristaMenuLink(menuItem.name))
+        || Boolean(menuToken && removedTokens.has(menuToken))
+        || (/\s*\(?TOTS?\)?$/i.test(menuItem.name) && removedBaseLabels.has(normalizeBaristaMenuLink(menuItem.name)))
+      );
+      return linkedById || linkedLegacyItem ? { ...menuItem, deletedAt: updatedAt, updatedAt } : menuItem;
+    });
+    writes.push(writePosState(
+      STORAGE_BARISTA_STATE,
+      snapshot.tickets,
+      snapshot.ticketSeq,
+      snapshot.payments,
+      nextMenuItems,
+    ));
+    const results = await Promise.all(writes.filter((write): write is Promise<boolean> => Boolean(write)));
+    if (results.some((result) => result === false)) {
+      window.alert("The Bar inventory was cleared on this device. Cloud synchronization is pending and will retry automatically.");
+    }
     resetStoreForm("barista");
   };
 
@@ -1129,7 +1401,7 @@ export function InventoryControlView({
                             }))
                           }
                           onBlur={(event) => {
-                            saveInlineSellingPrice(lane, item.id, event.target.value);
+                            void saveInlineSellingPrice(lane, item.id, event.target.value);
                             setSellingPriceDrafts((current) => {
                               const next = { ...current };
                               delete next[item.id];

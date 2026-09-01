@@ -98,9 +98,16 @@ function findRendererPort(preferredPort) {
     });
   });
 
-  return preferredPort
-    ? tryPort(preferredPort).catch(() => tryPort(0))
-    : tryPort(0);
+  if (!preferredPort) return tryPort(0);
+
+  return tryPort(preferredPort).catch((error) => {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Lighthouse cannot safely use its saved local port ${preferredPort} (${reason}). `
+      + "Close any leftover Lighthouse process or restart Windows, then reopen the app. "
+      + "The app will not switch ports because that would strand offline menu and POS changes in a different storage origin.",
+    );
+  });
 }
 
 async function waitForServer(origin) {
@@ -257,11 +264,24 @@ function registerDesktopIpc() {
       throw new Error("Invalid staff authentication request.");
     }
 
-    const response = await net.fetch("https://www.lighthousemoshi.com/api/auth/pin", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role, password }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    let response;
+    try {
+      response = await net.fetch("https://www.lighthousemoshi.com/api/auth/pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role, password }),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error("Cloud role verification timed out. Check the connection and try again.");
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || typeof payload.token !== "string") {
       throw new Error(typeof payload.error === "string" ? payload.error : "Cloud role verification failed.");

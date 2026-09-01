@@ -23,6 +23,7 @@
     "firebase:verify-database": "node scripts/verify-realtime-database.mjs",
     "firebase:verify-production-sync": "node scripts/verify-production-realtime-sync.mjs",
     "firebase:verify": "node scripts/verify-firebase-admin.mjs",
+    "verify:menu-sync": "node --experimental-strip-types --no-warnings scripts/verify-menu-sync.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"
   },

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { readJson, readPosState, STORAGE_BARISTA_STATE, STORAGE_KITCHEN_STATE, writeJson, writePosState } from "@/app/lib/storage";
-import { subscribeToSyncedStorageKey } from "@/app/lib/firebase-sync";
+import { hydrateStorageKeyFromFirebase, subscribeToSyncedStorageKey } from "@/app/lib/firebase-sync";
 import {
   KITCHEN_CATEGORY_LABELS,
   KITCHEN_CATEGORY_OPTIONS,
@@ -19,9 +19,29 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { readStoredRole } from "@/app/lib/auth";
 import { readActiveSessionUsername } from "@/app/lib/login-profiles";
-import { Role } from "@/app/lib/mock-data";
+import { InventoryItem, Role } from "@/app/lib/mock-data";
+import {
+  getStoreItemLabel,
+  MainStoreItem,
+  normalizeStockName,
+  STORAGE_INVENTORY_ITEMS,
+  STORAGE_MAIN_STORE_ITEMS,
+} from "@/app/lib/inventory-transfer";
 
-type BaristaCategory = "espresso" | "coffee" | "tea" | "cold" | "snacks";
+type BaristaCategory =
+  | "espresso"
+  | "coffee"
+  | "tea"
+  | "beer"
+  | "wine"
+  | "spirits"
+  | "cider"
+  | "soft-drinks"
+  | "water-juice"
+  | "energy-drinks"
+  | "malt"
+  | "cold"
+  | "snacks";
 
 interface BaristaMenuItem {
   id: string;
@@ -29,6 +49,9 @@ interface BaristaMenuItem {
   price: number;
   category: BaristaCategory;
   prepMinutes: number;
+  updatedAt?: number;
+  deletedAt?: number;
+  sourceStoreItemId?: string;
 }
 
 interface QueueTicket {
@@ -67,6 +90,46 @@ const BARISTA_LEGACY = {
 
 const STORAGE_MENU_AUDIT = "lighthouse-menu-audit-trail";
 
+function normalizeBaristaMenuLink(value: string) {
+  return normalizeStockName(value.replace(/\s*\(?TOTS?\)?$/i, "").trim());
+}
+
+function getEditedBaristaStockLabel(
+  item: { name: string; size?: string },
+  previousMenuName: string,
+  nextMenuName: string,
+) {
+  const nextIsTotItem = /\s*\(?TOTS?\)?$/i.test(nextMenuName);
+  const nextStockLabel = nextMenuName.replace(/\s*\(?TOTS?\)?$/i, "").trim();
+  const currentLabel = item.size ? `${item.name} ${item.size}` : item.name;
+  const nextTarget = normalizeBaristaMenuLink(nextStockLabel);
+  if (
+    nextTarget === normalizeBaristaMenuLink(previousMenuName)
+    || nextTarget === normalizeBaristaMenuLink(currentLabel)
+  ) {
+    return { name: item.name, size: item.size ?? "" };
+  }
+
+  const currentSize = item.size?.trim() ?? "";
+  if (nextIsTotItem && currentSize) return { name: nextStockLabel, size: currentSize };
+  if (currentSize) {
+    const nextWords = nextStockLabel.split(/\s+/);
+    const sizeWords = currentSize.split(/\s+/);
+    const sizeSuffix = nextWords.slice(-sizeWords.length).join(" ");
+    if (normalizeStockName(sizeSuffix) === normalizeStockName(currentSize)) {
+      const baseName = nextWords.slice(0, -sizeWords.length).join(" ").trim();
+      if (baseName) return { name: baseName, size: currentSize };
+    }
+  }
+
+  const structuredSize = nextStockLabel.match(
+    /^(.+?)\s+((?:\d+(?:[.,]\d+)?)\s*(?:ml|cl|l|litres?|liters?|g|kg))$/i,
+  );
+  return structuredSize
+    ? { name: structuredSize[1].trim(), size: structuredSize[2].trim() }
+    : { name: nextStockLabel, size: "" };
+}
+
 function formatAuditDate(value: number) {
   return new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
@@ -102,46 +165,78 @@ export function MenuCreateView() {
   const [editingBaristaName, setEditingBaristaName] = useState("");
   const [editingBaristaPrice, setEditingBaristaPrice] = useState("");
   const [auditTrail, setAuditTrail] = useState<MenuAuditEntry[]>([]);
+  const [saveFeedback, setSaveFeedback] = useState("");
 
   useEffect(() => {
+    let cancelled = false;
     const currentRole = readStoredRole();
     setSessionRole(currentRole);
     setChangedBy(readActiveSessionUsername(currentRole ?? "manager") || currentRole || "manager");
 
-    const kitchenSnapshot = readPosState<QueueTicket, PaymentRecord, KitchenMenuItem>(
-      STORAGE_KITCHEN_STATE,
-      KITCHEN_LEGACY.tickets,
-      KITCHEN_LEGACY.seq,
-      KITCHEN_LEGACY.payments,
-      KITCHEN_LEGACY.menu,
-      KITCHEN_LEGACY.defaultSeq,
-    );
-    const nextKitchenMenuItems = mergeKitchenMenuItems(kitchenSnapshot.menuItems);
-    setKitchenMenuItems(nextKitchenMenuItems);
-    if (JSON.stringify(nextKitchenMenuItems) !== JSON.stringify(kitchenSnapshot.menuItems)) {
-      writePosState(
+    const applyKitchenSnapshot = () => {
+      if (cancelled) return;
+      const kitchenSnapshot = readPosState<QueueTicket, PaymentRecord, KitchenMenuItem>(
         STORAGE_KITCHEN_STATE,
-        kitchenSnapshot.tickets,
-        kitchenSnapshot.ticketSeq,
-        kitchenSnapshot.payments,
-        nextKitchenMenuItems,
+        KITCHEN_LEGACY.tickets,
+        KITCHEN_LEGACY.seq,
+        KITCHEN_LEGACY.payments,
+        KITCHEN_LEGACY.menu,
+        KITCHEN_LEGACY.defaultSeq,
       );
-    }
+      const nextKitchenMenuItems = mergeKitchenMenuItems(kitchenSnapshot.menuItems);
+      setKitchenMenuItems(nextKitchenMenuItems);
+      if (JSON.stringify(nextKitchenMenuItems) !== JSON.stringify(kitchenSnapshot.menuItems)) {
+        void writePosState(
+          STORAGE_KITCHEN_STATE,
+          kitchenSnapshot.tickets,
+          kitchenSnapshot.ticketSeq,
+          kitchenSnapshot.payments,
+          nextKitchenMenuItems,
+        );
+      }
+    };
 
-    const baristaSnapshot = readPosState<QueueTicket, PaymentRecord, BaristaMenuItem>(
-      STORAGE_BARISTA_STATE,
-      BARISTA_LEGACY.tickets,
-      BARISTA_LEGACY.seq,
-      BARISTA_LEGACY.payments,
-      BARISTA_LEGACY.menu,
-      BARISTA_LEGACY.defaultSeq,
-    );
-    setBaristaMenuItems(baristaSnapshot.menuItems);
-    setAuditTrail(readJson<MenuAuditEntry[]>(STORAGE_MENU_AUDIT) ?? []);
+    const applyBaristaSnapshot = () => {
+      if (cancelled) return;
+      const baristaSnapshot = readPosState<QueueTicket, PaymentRecord, BaristaMenuItem>(
+        STORAGE_BARISTA_STATE,
+        BARISTA_LEGACY.tickets,
+        BARISTA_LEGACY.seq,
+        BARISTA_LEGACY.payments,
+        BARISTA_LEGACY.menu,
+        BARISTA_LEGACY.defaultSeq,
+      );
+      setBaristaMenuItems(baristaSnapshot.menuItems.filter((item) => !item.deletedAt));
+    };
 
-    return subscribeToSyncedStorageKey<MenuAuditEntry[]>(STORAGE_MENU_AUDIT, (value) => {
-      setAuditTrail(Array.isArray(value) ? value : readJson<MenuAuditEntry[]>(STORAGE_MENU_AUDIT) ?? []);
+    const applyAuditSnapshot = () => {
+      if (!cancelled) setAuditTrail(readJson<MenuAuditEntry[]>(STORAGE_MENU_AUDIT) ?? []);
+    };
+
+    applyKitchenSnapshot();
+    applyBaristaSnapshot();
+    applyAuditSnapshot();
+
+    const unsubscribeKitchen = subscribeToSyncedStorageKey(STORAGE_KITCHEN_STATE, applyKitchenSnapshot);
+    const unsubscribeBarista = subscribeToSyncedStorageKey(STORAGE_BARISTA_STATE, applyBaristaSnapshot);
+    const unsubscribeAudit = subscribeToSyncedStorageKey<MenuAuditEntry[]>(STORAGE_MENU_AUDIT, applyAuditSnapshot);
+
+    void Promise.all([
+      hydrateStorageKeyFromFirebase(STORAGE_KITCHEN_STATE),
+      hydrateStorageKeyFromFirebase(STORAGE_BARISTA_STATE),
+      hydrateStorageKeyFromFirebase(STORAGE_MENU_AUDIT),
+    ]).finally(() => {
+      applyKitchenSnapshot();
+      applyBaristaSnapshot();
+      applyAuditSnapshot();
     });
+
+    return () => {
+      cancelled = true;
+      unsubscribeKitchen();
+      unsubscribeBarista();
+      unsubscribeAudit();
+    };
   }, []);
 
   const saveAuditEntry = (entry: MenuAuditEntry) => {
@@ -159,7 +254,7 @@ export function MenuCreateView() {
       KITCHEN_LEGACY.menu,
       KITCHEN_LEGACY.defaultSeq,
     );
-    writePosState(
+    return writePosState(
       STORAGE_KITCHEN_STATE,
       latestSnapshot.tickets,
       latestSnapshot.ticketSeq,
@@ -177,13 +272,93 @@ export function MenuCreateView() {
       BARISTA_LEGACY.menu,
       BARISTA_LEGACY.defaultSeq,
     );
-    writePosState(
+    return writePosState(
       STORAGE_BARISTA_STATE,
       latestSnapshot.tickets,
       latestSnapshot.ticketSeq,
       latestSnapshot.payments,
       nextMenuItems,
     );
+  };
+
+  const reportMenuSync = (label: string, synced: boolean | undefined) => {
+    setSaveFeedback(
+      synced === false
+        ? `${label} saved on this device. Cloud sync is pending and will retry when the connection recovers.`
+        : `${label} saved. The live POS menu has been updated.`,
+    );
+  };
+
+  const updateLinkedBaristaInventory = (
+    previousItem: BaristaMenuItem,
+    nextName: string,
+    nextPrice: number,
+    updatedAt: number,
+  ) => {
+    const previousTarget = normalizeBaristaMenuLink(previousItem.name);
+    const nameChanged = previousItem.name.trim() !== nextName;
+    const writes: Array<Promise<boolean> | undefined> = [];
+    const storedItems = readJson<Array<MainStoreItem & { lane?: "kitchen" | "barista" }>>(STORAGE_MAIN_STORE_ITEMS) ?? [];
+    const linkedStoreItem = storedItems.find(
+      (item) => item.lane === "barista" && !item.deletedAt && item.id === previousItem.sourceStoreItemId,
+    ) ?? storedItems.find(
+      (item) => item.lane === "barista" && !item.deletedAt && normalizeBaristaMenuLink(getStoreItemLabel(item)) === previousTarget,
+    ) ?? (/\s*\(?TOTS?\)?$/i.test(previousItem.name)
+      ? storedItems.find(
+          (item) => item.lane === "barista" && !item.deletedAt && normalizeBaristaMenuLink(item.name) === previousTarget,
+        )
+      : undefined);
+    const nextStoreLabel = linkedStoreItem
+      ? getEditedBaristaStockLabel(linkedStoreItem, previousItem.name, nextName)
+      : null;
+    const nextStoreItems = storedItems.map((item) =>
+      item.id === linkedStoreItem?.id
+        ? {
+            ...item,
+            ...(nameChanged && nextStoreLabel ? nextStoreLabel : {}),
+            sellingPrice: nextPrice,
+            updatedAt,
+          }
+        : item,
+    );
+    if (JSON.stringify(nextStoreItems) !== JSON.stringify(storedItems)) {
+      writes.push(writeJson(STORAGE_MAIN_STORE_ITEMS, nextStoreItems));
+    }
+
+    const inventoryItems = readJson<InventoryItem[]>(STORAGE_INVENTORY_ITEMS) ?? [];
+    const linkedInventoryIndex = inventoryItems.findIndex((inventoryItem) => {
+      const labels = [
+        inventoryItem.name,
+        inventoryItem.size ? `${inventoryItem.name} ${inventoryItem.size}` : inventoryItem.name,
+      ];
+      return inventoryItem.category.trim().toLowerCase() !== "kitchen"
+        && inventoryItem.status !== "INACTIVE"
+        && (
+          labels.some((label) => normalizeBaristaMenuLink(label) === previousTarget)
+          || (/\s*\(?TOTS?\)?$/i.test(previousItem.name)
+            && normalizeBaristaMenuLink(inventoryItem.name) === previousTarget)
+        );
+    });
+    const linkedInventoryItem = linkedInventoryIndex >= 0 ? inventoryItems[linkedInventoryIndex] : null;
+    const nextInventoryLabel = linkedInventoryItem
+      ? getEditedBaristaStockLabel(linkedInventoryItem, previousItem.name, nextName)
+      : null;
+    const nextInventoryItems = inventoryItems.map((inventoryItem, index) =>
+      index === linkedInventoryIndex
+        ? {
+            ...inventoryItem,
+            ...(nameChanged && nextInventoryLabel ? nextInventoryLabel : {}),
+            sellingPrice: nextPrice,
+            price: nextPrice,
+            updatedAt,
+          }
+        : inventoryItem,
+    );
+    if (JSON.stringify(nextInventoryItems) !== JSON.stringify(inventoryItems)) {
+      writes.push(writeJson(STORAGE_INVENTORY_ITEMS, nextInventoryItems));
+    }
+
+    return { writes, sourceStoreItemId: linkedStoreItem?.id };
   };
 
   const addKitchenMenuItem = async () => {
@@ -198,22 +373,33 @@ export function MenuCreateView() {
     });
     if (!approved) return;
 
+    const updatedAt = Date.now();
+    const latestSnapshot = readPosState<QueueTicket, PaymentRecord, KitchenMenuItem>(
+      STORAGE_KITCHEN_STATE,
+      KITCHEN_LEGACY.tickets,
+      KITCHEN_LEGACY.seq,
+      KITCHEN_LEGACY.payments,
+      KITCHEN_LEGACY.menu,
+      KITCHEN_LEGACY.defaultSeq,
+    );
     const nextMenuItems = [
       {
-        id: `km-${Date.now()}`,
+        id: `km-${updatedAt}`,
         name: kitchenName.trim(),
         price,
         prepMinutes,
         category: kitchenCategory,
+        updatedAt,
       },
-      ...kitchenMenuItems,
+      ...latestSnapshot.menuItems,
     ];
     setKitchenMenuItems(nextMenuItems);
-    persistKitchenMenu(nextMenuItems);
+    const syncResult = persistKitchenMenu(nextMenuItems);
     setKitchenName("");
     setKitchenPrice("");
     setKitchenPrepMinutes("15");
     setKitchenCategory("salad");
+    reportMenuSync("Kitchen menu item", await syncResult);
   };
 
   const startKitchenEdit = (item: KitchenMenuItem) => {
@@ -250,21 +436,31 @@ export function MenuCreateView() {
     });
     if (!approved) return;
 
-    const nextMenuItems = kitchenMenuItems.map((entry) =>
-      entry.id === item.id ? { ...entry, name: nextName, price: nextPrice } : entry,
+    const updatedAt = Date.now();
+    const latestSnapshot = readPosState<QueueTicket, PaymentRecord, KitchenMenuItem>(
+      STORAGE_KITCHEN_STATE,
+      KITCHEN_LEGACY.tickets,
+      KITCHEN_LEGACY.seq,
+      KITCHEN_LEGACY.payments,
+      KITCHEN_LEGACY.menu,
+      KITCHEN_LEGACY.defaultSeq,
+    );
+    const nextMenuItems = latestSnapshot.menuItems.map((entry) =>
+      entry.id === item.id ? { ...entry, name: nextName, price: nextPrice, updatedAt } : entry,
     );
     setKitchenMenuItems(nextMenuItems);
-    persistKitchenMenu(nextMenuItems);
+    const syncResult = persistKitchenMenu(nextMenuItems);
     saveAuditEntry({
-      id: `audit-${Date.now()}`,
+      id: `audit-${updatedAt}`,
       menu: "kitchen",
       itemId: item.id,
       itemName: nextName,
-      changedAt: Date.now(),
+      changedAt: updatedAt,
       changedBy,
       changes,
     });
     cancelKitchenEdit();
+    reportMenuSync("Kitchen menu item", await syncResult);
   };
 
   const addBaristaMenuItem = async () => {
@@ -279,22 +475,33 @@ export function MenuCreateView() {
     });
     if (!approved) return;
 
+    const updatedAt = Date.now();
+    const latestSnapshot = readPosState<QueueTicket, PaymentRecord, BaristaMenuItem>(
+      STORAGE_BARISTA_STATE,
+      BARISTA_LEGACY.tickets,
+      BARISTA_LEGACY.seq,
+      BARISTA_LEGACY.payments,
+      BARISTA_LEGACY.menu,
+      BARISTA_LEGACY.defaultSeq,
+    );
     const nextMenuItems = [
       {
-        id: `bm-${Date.now()}`,
+        id: `bm-${updatedAt}`,
         name: baristaName.trim(),
         price,
         prepMinutes,
         category: baristaCategory,
+        updatedAt,
       },
-      ...baristaMenuItems,
+      ...latestSnapshot.menuItems,
     ];
-    setBaristaMenuItems(nextMenuItems);
-    persistBaristaMenu(nextMenuItems);
+    setBaristaMenuItems(nextMenuItems.filter((item) => !item.deletedAt));
+    const syncResult = persistBaristaMenu(nextMenuItems);
     setBaristaName("");
     setBaristaPrice("");
     setBaristaPrepMinutes("10");
     setBaristaCategory("coffee");
+    reportMenuSync("Barista menu item", await syncResult);
   };
 
   const startBaristaEdit = (item: BaristaMenuItem) => {
@@ -331,21 +538,48 @@ export function MenuCreateView() {
     });
     if (!approved) return;
 
-    const nextMenuItems = baristaMenuItems.map((entry) =>
-      entry.id === item.id ? { ...entry, name: nextName, price: nextPrice } : entry,
+    const updatedAt = Date.now();
+    const latestSnapshot = readPosState<QueueTicket, PaymentRecord, BaristaMenuItem>(
+      STORAGE_BARISTA_STATE,
+      BARISTA_LEGACY.tickets,
+      BARISTA_LEGACY.seq,
+      BARISTA_LEGACY.payments,
+      BARISTA_LEGACY.menu,
+      BARISTA_LEGACY.defaultSeq,
     );
-    setBaristaMenuItems(nextMenuItems);
-    persistBaristaMenu(nextMenuItems);
+    const latestItem = latestSnapshot.menuItems.find((entry) => entry.id === item.id && !entry.deletedAt);
+    if (!latestItem) {
+      cancelBaristaEdit();
+      setSaveFeedback("This Barista menu item is no longer active. Refresh and choose an active item before saving.");
+      return;
+    }
+    const linkedUpdates = updateLinkedBaristaInventory(latestItem, nextName, nextPrice, updatedAt);
+    const nextMenuItems = latestSnapshot.menuItems.map((entry) =>
+      entry.id === item.id
+        ? {
+            ...entry,
+            name: nextName,
+            price: nextPrice,
+            sourceStoreItemId: linkedUpdates.sourceStoreItemId ?? entry.sourceStoreItemId,
+            updatedAt,
+          }
+        : entry,
+    );
+    setBaristaMenuItems(nextMenuItems.filter((entry) => !entry.deletedAt));
+    const writes = [persistBaristaMenu(nextMenuItems), ...linkedUpdates.writes]
+      .filter((write): write is Promise<boolean> => Boolean(write));
     saveAuditEntry({
-      id: `audit-${Date.now()}`,
+      id: `audit-${updatedAt}`,
       menu: "barista",
       itemId: item.id,
       itemName: nextName,
-      changedAt: Date.now(),
+      changedAt: updatedAt,
       changedBy,
       changes,
     });
     cancelBaristaEdit();
+    const results = await Promise.all(writes);
+    reportMenuSync("Barista menu item", results.some((result) => !result) ? false : true);
   };
 
   const visibleAuditTrail = auditTrail.filter((entry) => entry.menu === tab);
@@ -361,6 +595,11 @@ export function MenuCreateView() {
             ? "Create dishes and update the Kitchen POS selling prices"
             : "Create and manage kitchen and barista menu items from one place"}
         </p>
+        {saveFeedback && (
+          <p role="status" className="mt-2 text-xs font-bold text-muted-foreground">
+            {saveFeedback}
+          </p>
+        )}
       </header>
 
       <Tabs value={tab} onValueChange={(value) => setTab(value as "kitchen" | "barista")}>
@@ -482,6 +721,14 @@ export function MenuCreateView() {
                 <option value="espresso">Espresso</option>
                 <option value="coffee">Coffee</option>
                 <option value="tea">Tea</option>
+                <option value="beer">Beer</option>
+                <option value="wine">Wine</option>
+                <option value="spirits">Spirits</option>
+                <option value="cider">Cider</option>
+                <option value="soft-drinks">Soft Drinks</option>
+                <option value="water-juice">Water / Juice</option>
+                <option value="energy-drinks">Energy Drinks</option>
+                <option value="malt">Malt</option>
                 <option value="cold">Cold</option>
                 <option value="snacks">Snacks</option>
               </select>

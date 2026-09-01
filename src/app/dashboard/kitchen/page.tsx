@@ -46,6 +46,13 @@ interface CartLine {
   qty: number;
 }
 
+interface KitchenOrderLine {
+  name: string;
+  qty: number;
+  itemId?: string;
+  unitPrice?: number;
+}
+
 interface KitchenTicket {
   id: string;
   code: string;
@@ -53,7 +60,7 @@ interface KitchenTicket {
   mode: ServiceMode;
   destination: string;
   roomNumber?: string;
-  lines: Array<{ name: string; qty: number }>;
+  lines: KitchenOrderLine[];
   total: number;
 }
 
@@ -70,7 +77,7 @@ interface KitchenPaymentRecord {
   mode: ServiceMode;
   destination: string;
   roomNumber?: string;
-  lines?: Array<{ name: string; qty: number }>;
+  lines?: KitchenOrderLine[];
   total: number;
   status: KitchenPaymentStatus;
   method: KitchenPaymentMethod;
@@ -84,7 +91,7 @@ interface PendingOrder {
   mode: ServiceMode;
   destination: string;
   roomNumber?: string;
-  lines: Array<{ name: string; qty: number }>;
+  lines: KitchenOrderLine[];
   total: number;
 }
 
@@ -301,6 +308,42 @@ export default function KitchenPage() {
     [category, menuItems, searchTerm],
   );
 
+  useEffect(() => {
+    if (!posHydrated) return;
+    const latestItemsById = new Map(menuItems.map((item) => [item.id, item]));
+    const latestItemsByName = new Map(menuItems.map((item) => [item.name.trim().toLowerCase(), item]));
+    const reconcileLines = (lines: CartLine[]) =>
+      lines.flatMap((line) => {
+        const latestItem = latestItemsById.get(line.item.id);
+        return latestItem ? [{ ...line, item: latestItem }] : [];
+      });
+    // A manager price/name edit must also update items that were already added
+    // to an open cart; otherwise checkout would still use the stale price.
+    setCart(reconcileLines);
+    setPendingOrder((current) => {
+      if (!current) return current;
+      const lines = current.lines.flatMap((line) => {
+        const latestItem = (line.itemId ? latestItemsById.get(line.itemId) : undefined)
+          ?? latestItemsByName.get(line.name.trim().toLowerCase());
+        return latestItem
+          ? [{ ...line, itemId: latestItem.id, name: latestItem.name, unitPrice: latestItem.price }]
+          : [];
+      });
+      if (lines.length === 0) return null;
+      return {
+        ...current,
+        lines,
+        total: lines.reduce((sum, line) => sum + (line.unitPrice ?? 0) * line.qty, 0),
+      };
+    });
+  }, [menuItems, posHydrated]);
+
+  useEffect(() => {
+    if (pendingOrder) return;
+    setShowSettlementPopup(false);
+    setShowPayNowPopup(false);
+  }, [pendingOrder]);
+
   const subtotal = useMemo(() => cart.reduce((sum, line) => sum + line.item.price * line.qty, 0), [cart]);
   const completedSalesTotal = useMemo(
     () => kitchenPayments.filter((payment) => payment.status !== "credit").reduce((sum, payment) => sum + payment.total, 0),
@@ -363,7 +406,9 @@ export default function KitchenPage() {
         }
 
         return payment.lines.map((line, index) => {
-          const price = kitchenMenuPriceByItem.get(line.name.trim().toLowerCase()) ?? 0;
+          const price = typeof line.unitPrice === "number" && line.unitPrice > 0
+            ? line.unitPrice
+            : kitchenMenuPriceByItem.get(line.name.trim().toLowerCase()) ?? 0;
           const amount = price > 0
             ? line.qty * price
             : payment.lines?.length === 1
@@ -560,7 +605,12 @@ export default function KitchenPage() {
         mode: serviceMode,
         destination,
         roomNumber: serviceMode === "room-service" ? roomNumber.trim() : undefined,
-        lines: cart.map((line) => ({ name: line.item.name, qty: line.qty })),
+        lines: cart.map((line) => ({
+          itemId: line.item.id,
+          name: line.item.name,
+          qty: line.qty,
+          unitPrice: line.item.price,
+        })),
         total: subtotal,
       });
       setShowPayNowPopup(false);
@@ -693,7 +743,12 @@ export default function KitchenPage() {
         total: pastPaymentTotal,
         status: pastPaymentMethod === "credit" ? "credit" : "completed",
         method: pastPaymentMethod,
-        lines: pastPaymentCart.map((line) => ({ name: line.item.name, qty: line.qty })),
+        lines: pastPaymentCart.map((line) => ({
+          itemId: line.item.id,
+          name: line.item.name,
+          qty: line.qty,
+          unitPrice: line.item.price,
+        })),
         historical: true,
         recordedAt,
       };

@@ -39,6 +39,10 @@ export function ensureFirebaseAuthReady() {
         // Fall back to the default auth persistence if the environment blocks local persistence.
       }
 
+      // Firebase restores persisted users asynchronously. Reading currentUser
+      // before restoration completed made the first POS realtime subscription
+      // fail permanently on some reloads.
+      await firebaseAuth.authStateReady();
       if (firebaseAuth.currentUser) {
         return;
       }
