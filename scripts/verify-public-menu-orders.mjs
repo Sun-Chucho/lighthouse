@@ -5,12 +5,13 @@ dotenv.config({ path: resolve(process.cwd(), ".env.local") });
 const { readServerSyncedStorageValue, writeServerSyncedStorageValue } = await import("../src/app/lib/firebase-server.ts");
 
 const storageKey = "lighthouse-website-menu-orders";
-const response = await fetch("http://localhost:3000/api/menu-orders", {
+const baseUrl = (process.env.MENU_TEST_BASE_URL || "http://localhost:3000").replace(/\/+$/, "");
+const response = await fetch(`${baseUrl}/api/menu-orders`, {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
-    Origin: "http://localhost:3000",
-    Referer: "http://localhost:3000/menu",
+    Origin: baseUrl,
+    Referer: `${baseUrl}/menu`,
   },
   body: JSON.stringify({
     department: "kitchen",
