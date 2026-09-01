@@ -403,12 +403,11 @@ export function PublicLanding() {
       <footer className="public-footer">
         <div className="public-footer__brand"><Image src="/logo-192.jpg" alt="" width={48} height={48} sizes="48px" /><span><strong>Lighthouse</strong><small>Lodge</small></span></div>
         <div><p className="public-kicker">Stay</p><a href="#stays">Luxury rooms</a><a href="#stays">Classic rooms</a><a href="#reserve">Request a booking</a><a href="/menu">Food &amp; drinks menu</a></div>
-        <div className="public-footer__contact">
-          <p className="public-kicker">Contact &amp; location</p>
-          <a href="https://www.google.co.tz/maps/place/Light+House+Lodge/@-3.3373949,37.3483431,17z/data=!3m1!4b1!4m6!3m5!1s0x1839d96d70c60d93:0x98fbfa9c8b93d5c5!8m2!3d-3.3373949!4d37.3483431!16s%2Fg%2F11zfgrg3dv?entry=ttu&amp;g_ep=EgoyMDI2MDgyNi4wIKXMDSoASAFQAw%3D%3D" target="_blank" rel="noreferrer" aria-label="Open Lighthouse Lodge in Google Maps"><MapPin size={15} /> Find us on Google Maps</a>
-          <a href="https://www.instagram.com/light_house_lodge" target="_blank" rel="noreferrer" aria-label="Lighthouse Lodge on Instagram"><Instagram size={15} /> @light_house_lodge</a>
-          <a href="mailto:lighthouselodgetz@gmail.com"><Mail size={15} /> lighthouselodgetz@gmail.com</a>
-          <a href="tel:+255725013998"><Phone size={15} /> +255725013998</a>
+        <div className="public-footer__contact" aria-label="Contact and location">
+          <a href={LIGHTHOUSE_MAP_URL} target="_blank" rel="noreferrer" aria-label="Open Lighthouse Lodge in Google Maps" title="Location"><MapPin size={20} /></a>
+          <a href="https://www.instagram.com/light_house_lodge" target="_blank" rel="noreferrer" aria-label="Open Lighthouse Lodge on Instagram" title="Instagram"><Instagram size={20} /></a>
+          <a href="mailto:lighthouselodgetz@gmail.com" aria-label="Email Lighthouse Lodge" title="Email"><Mail size={20} /></a>
+          <a href="tel:+255725013998" aria-label="Call Lighthouse Lodge" title="Call"><Phone size={20} /></a>
         </div>
         <div className="public-footer__map">
           <iframe title="Interactive map showing Lighthouse Lodge" src="https://www.google.com/maps?q=-3.3373949,37.3483431&amp;z=17&amp;output=embed" loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen />

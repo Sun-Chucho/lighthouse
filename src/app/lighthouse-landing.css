@@ -945,13 +945,28 @@ textarea:focus-visible {
 }
 
 .public-footer__contact a {
-  color: inherit;
-  overflow-wrap: anywhere;
-  transition: color 160ms ease;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border: 1px solid rgba(255, 250, 241, 0.17);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 250, 241, 0.78);
+  transition: color 180ms ease, border-color 180ms ease, background 180ms ease, transform 180ms ease;
 }
 
-.public-footer__contact a:hover {
+.public-footer__contact {
+  align-items: center !important;
+  flex-direction: row !important;
+  gap: 10px !important;
+}
+
+.public-footer__contact a:hover,
+.public-footer__contact a:focus-visible {
+  border-color: rgba(224, 183, 98, 0.72);
+  background: rgba(181, 125, 39, 0.15);
   color: var(--gold-300);
+  transform: translateY(-2px);
 }
 
 .public-footer__contact svg {
