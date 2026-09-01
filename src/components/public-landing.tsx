@@ -401,8 +401,19 @@ export function PublicLanding() {
       </main>
 
       <footer className="public-footer">
-        <div className="public-footer__brand"><Image src="/logo-192.jpg" alt="" width={48} height={48} sizes="48px" /><span><strong>Lighthouse</strong><small>Lodge</small></span></div>
-        <div><p className="public-kicker">Stay</p><a href="#stays">Luxury rooms</a><a href="#stays">Classic rooms</a><a href="#reserve">Request a booking</a><a href="/menu">Food &amp; drinks menu</a></div>
+        <div className="public-footer__brand">
+          <Image src="/logo-192.jpg" alt="" width={48} height={48} sizes="48px" />
+          <div className="public-footer__brand-copy">
+            <span><strong>Lighthouse</strong><small>Lodge</small></span>
+            <p>A considered place to rest, dine and feel at home in Moshi.</p>
+          </div>
+        </div>
+        <div className="public-footer__explore">
+          <p className="public-kicker">Explore</p>
+          <a href="#stays"><span><BedDouble size={17} /></span><strong>Rooms<small>Classic &amp; Luxury stays</small></strong><ArrowRight size={15} /></a>
+          <a href="/menu"><span><ConciergeBell size={17} /></span><strong>Food &amp; drinks<small>Explore our live menu</small></strong><ArrowRight size={15} /></a>
+          <a href="#reserve"><span><CalendarDays size={17} /></span><strong>Reservations<small>Request your stay</small></strong><ArrowRight size={15} /></a>
+        </div>
         <div className="public-footer__contact" aria-label="Contact and location">
           <a href={LIGHTHOUSE_MAP_URL} target="_blank" rel="noreferrer" aria-label="Open Lighthouse Lodge in Google Maps" title="Location"><MapPin size={20} /></a>
           <a href="https://www.instagram.com/light_house_lodge" target="_blank" rel="noreferrer" aria-label="Open Lighthouse Lodge on Instagram" title="Instagram"><Instagram size={20} /></a>
