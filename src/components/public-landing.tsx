@@ -10,7 +10,10 @@ import {
   Cloud,
   CloudOff,
   ConciergeBell,
+  Instagram,
+  Mail,
   MapPin,
+  Phone,
   ShieldCheck,
   Sparkles,
   Users,
@@ -274,7 +277,13 @@ export function PublicLanding() {
       <footer className="public-footer">
         <div className="public-footer__brand"><img src="/logo.jpeg" alt="" width={62} height={62} /><span><strong>Lighthouse</strong><small>Lodge</small></span></div>
         <div><p className="public-kicker">Stay</p><a href="#stays">Luxury rooms</a><a href="#stays">Classic rooms</a><a href="#reserve">Request a booking</a></div>
-        <div><p className="public-kicker">Lighthouse</p><span><MapPin size={14} /> Private lodge hospitality</span><span><Cloud size={14} /> Online and offline continuity</span></div>
+        <div className="public-footer__contact">
+          <p className="public-kicker">Contact &amp; location</p>
+          <a href="https://www.google.co.tz/maps/place/Light+House+Lodge/@-3.3373949,37.3483431,17z/data=!3m1!4b1!4m6!3m5!1s0x1839d96d70c60d93:0x98fbfa9c8b93d5c5!8m2!3d-3.3373949!4d37.3483431!16s%2Fg%2F11zfgrg3dv?entry=ttu&amp;g_ep=EgoyMDI2MDgyNi4wIKXMDSoASAFQAw%3D%3D" target="_blank" rel="noreferrer" aria-label="Open Lighthouse Lodge in Google Maps"><MapPin size={15} /> Find us on Google Maps</a>
+          <a href="https://www.instagram.com/light_house_lodge" target="_blank" rel="noreferrer" aria-label="Lighthouse Lodge on Instagram"><Instagram size={15} /> @light_house_lodge</a>
+          <a href="mailto:lighthouselodgetz@gmail.com"><Mail size={15} /> lighthouselodgetz@gmail.com</a>
+          <a href="tel:+255725013998"><Phone size={15} /> +255725013998</a>
+        </div>
         <div className="public-footer__staff"><p className="public-kicker">Operations</p><Link href={STAFF_PORTAL_PATH}>Staff access <ArrowRight size={15} /></Link></div>
         <p className="public-footer__legal">© {new Date().getFullYear()} Lighthouse Lodge. All stays are subject to confirmation.</p>
       </footer>

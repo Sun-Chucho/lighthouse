@@ -798,6 +798,20 @@ textarea:focus-visible {
   gap: 7px;
 }
 
+.public-footer__contact a {
+  color: inherit;
+  overflow-wrap: anywhere;
+  transition: color 160ms ease;
+}
+
+.public-footer__contact a:hover {
+  color: var(--gold-300);
+}
+
+.public-footer__contact svg {
+  flex: 0 0 auto;
+}
+
 .public-footer__staff a {
   color: var(--gold-300);
   font-weight: 800;
