@@ -3,13 +3,13 @@ export const ROOM_CATEGORIES = {
     label: "Luxury",
     price: 60_000,
     rooms: [301, 304, 308, 313, 314, 315, 317, 318, 319, 320],
-    image: "/images/luxury-room.jpg",
+    image: "/images/luxury-room-main.webp",
   },
   classic: {
     label: "Classic",
     price: 80_000,
     rooms: [302, 303, 305, 306, 307, 309, 310, 311, 312, 316],
-    image: "/images/classic-room.jpg",
+    image: "/images/classic-room-main.webp",
   },
 } as const;
 

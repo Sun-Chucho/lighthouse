@@ -26,6 +26,14 @@ import { formatPrice, ROOM_CATEGORIES } from "../data/rooms";
 
 const LIGHTHOUSE_MAP_URL = "https://www.google.co.tz/maps/place/Light+House+Lodge/@-3.3373949,37.3483431,17z/data=!3m1!4b1!4m6!3m5!1s0x1839d96d70c60d93:0x98fbfa9c8b93d5c5!8m2!3d-3.3373949!4d37.3483431!16s%2Fg%2F11zfgrg3dv?entry=ttu&g_ep=EgoyMDI2MDgyNi4wIKXMDSoASAFQAw%3D%3D";
 
+const ROOM_GALLERY = [
+  { src: "/images/luxury-room-main.webp", alt: "Luxury room at Lighthouse Lodge with air conditioning and a writing desk", label: "Luxury room", className: "public-gallery__feature" },
+  { src: "/images/luxury-room-detail.webp", alt: "Luxury room bed and bedside reading light", label: "Bedside comfort", className: "" },
+  { src: "/images/classic-room-main.webp", alt: "Lighthouse Lodge team preparing a Classic room", label: "Prepared with care", className: "" },
+  { src: "/images/classic-room-interior.webp", alt: "Classic room television, table, writing desk and bed", label: "Classic room", className: "" },
+  { src: "/images/classic-room-amenities.webp", alt: "Classic room writing desk, television and tea station", label: "In-room amenities", className: "" },
+] as const;
+
 type StayForm = {
   checkIn: string;
   checkOut: string;
@@ -204,7 +212,7 @@ export function PublicLanding() {
             {(Object.entries(ROOM_CATEGORIES) as Array<[keyof typeof ROOM_CATEGORIES, typeof ROOM_CATEGORIES[keyof typeof ROOM_CATEGORIES]]>).map(([key, room], index) => (
               <article className="public-room-card" key={key}>
                 <div className="public-room-card__image">
-                  <img src={room.image} alt={`${room.label} room at Lighthouse Lodge`} />
+                  <Image src={room.image} alt={`${room.label} room at Lighthouse Lodge`} fill sizes="(max-width: 760px) 100vw, 50vw" />
                   <span>{String(index + 1).padStart(2, "0")}</span>
                 </div>
                 <div className="public-room-card__body">
@@ -219,6 +227,21 @@ export function PublicLanding() {
                   </div>
                 </div>
               </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="public-gallery" aria-labelledby="gallery-title">
+          <div className="public-section-heading">
+            <div><p className="public-kicker">Inside Lighthouse</p><h2 id="gallery-title">A closer look at your stay.</h2></div>
+            <p>Real details from our Classic and Luxury rooms, prepared for a calm and comfortable arrival.</p>
+          </div>
+          <div className="public-gallery__grid">
+            {ROOM_GALLERY.map((image) => (
+              <figure className={image.className} key={image.src}>
+                <Image src={image.src} alt={image.alt} fill sizes={image.className ? "(max-width: 760px) 100vw, 58vw" : "(max-width: 760px) 50vw, 42vw"} />
+                <figcaption>{image.label}</figcaption>
+              </figure>
             ))}
           </div>
         </section>
