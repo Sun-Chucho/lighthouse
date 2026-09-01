@@ -414,11 +414,14 @@ export function PublicLanding() {
           <a href="/menu"><span><ConciergeBell size={17} /></span><strong>Food &amp; drinks<small>Explore our live menu</small></strong><ArrowRight size={15} /></a>
           <a href="#reserve"><span><CalendarDays size={17} /></span><strong>Reservations<small>Request your stay</small></strong><ArrowRight size={15} /></a>
         </div>
-        <div className="public-footer__contact" aria-label="Contact and location">
-          <a href={LIGHTHOUSE_MAP_URL} target="_blank" rel="noreferrer" aria-label="Open Lighthouse Lodge in Google Maps" title="Location"><MapPin size={20} /></a>
-          <a href="https://www.instagram.com/light_house_lodge" target="_blank" rel="noreferrer" aria-label="Open Lighthouse Lodge on Instagram" title="Instagram"><Instagram size={20} /></a>
-          <a href="mailto:lighthouselodgetz@gmail.com" aria-label="Email Lighthouse Lodge" title="Email"><Mail size={20} /></a>
-          <a href="tel:+255725013998" aria-label="Call Lighthouse Lodge" title="Call"><Phone size={20} /></a>
+        <div className="public-footer__contact">
+          <p className="public-kicker">Connect</p>
+          <div className="public-footer__contact-links" aria-label="Contact and location">
+            <a href={LIGHTHOUSE_MAP_URL} target="_blank" rel="noreferrer" aria-label="Open Lighthouse Lodge in Google Maps" title="Location"><MapPin size={20} /></a>
+            <a href="https://www.instagram.com/light_house_lodge" target="_blank" rel="noreferrer" aria-label="Open Lighthouse Lodge on Instagram" title="Instagram"><Instagram size={20} /></a>
+            <a href="mailto:lighthouselodgetz@gmail.com" aria-label="Email Lighthouse Lodge" title="Email"><Mail size={20} /></a>
+            <a href="tel:+255725013998" aria-label="Call Lighthouse Lodge" title="Call"><Phone size={20} /></a>
+          </div>
         </div>
         <div className="public-footer__map">
           <iframe title="Interactive map showing Lighthouse Lodge" src="https://www.google.com/maps?q=-3.3373949,37.3483431&amp;z=17&amp;output=embed" loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen />

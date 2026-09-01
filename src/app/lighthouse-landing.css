@@ -970,6 +970,20 @@ textarea:focus-visible {
   transition: color 180ms ease, border-color 180ms ease;
 }
 
+.public-footer__explore,
+.public-footer__contact {
+  align-self: start;
+  padding: 20px !important;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.public-footer__explore .public-kicker,
+.public-footer__contact .public-kicker {
+  margin-bottom: 6px;
+}
+
 .public-footer__explore a > span {
   display: grid;
   width: 32px;
@@ -1012,8 +1026,10 @@ textarea:focus-visible {
   transform: translateX(3px);
 }
 
-.public-footer__contact a {
+.public-footer__contact-links a {
   --contact-color: #f0bd63;
+  display: flex;
+  align-items: center;
   justify-content: center;
   width: 46px;
   height: 46px;
@@ -1024,39 +1040,39 @@ textarea:focus-visible {
   transition: color 180ms ease, border-color 180ms ease, background 180ms ease, transform 180ms ease;
 }
 
-.public-footer__contact a:nth-child(2) {
+.public-footer__contact-links a:nth-child(2) {
   --contact-color: #f06aa6;
   border-color: rgba(240, 106, 166, 0.28);
   background: rgba(240, 106, 166, 0.08);
 }
 
-.public-footer__contact a:nth-child(3) {
+.public-footer__contact-links a:nth-child(3) {
   --contact-color: #70b9f7;
   border-color: rgba(112, 185, 247, 0.28);
   background: rgba(112, 185, 247, 0.08);
 }
 
-.public-footer__contact a:nth-child(4) {
+.public-footer__contact-links a:nth-child(4) {
   --contact-color: #62d293;
   border-color: rgba(98, 210, 147, 0.28);
   background: rgba(98, 210, 147, 0.08);
 }
 
-.public-footer__contact {
-  align-items: center !important;
-  flex-direction: row !important;
-  gap: 10px !important;
+.public-footer__contact-links {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.public-footer__contact a:hover,
-.public-footer__contact a:focus-visible {
+.public-footer__contact-links a:hover,
+.public-footer__contact-links a:focus-visible {
   border-color: currentColor;
   background: rgba(255, 255, 255, 0.1);
   color: var(--contact-color);
   transform: translateY(-2px);
 }
 
-.public-footer__contact svg {
+.public-footer__contact-links svg {
   flex: 0 0 auto;
 }
 
