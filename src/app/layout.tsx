@@ -14,7 +14,20 @@ const playfair = Playfair_Display({
   variable: '--font-headline',
 });
 
+const publicSiteUrl = 'https://www.lighthousemoshi.com';
+const googleSiteVerification = (
+  process.env.GOOGLE_SITE_VERIFICATION
+  ?? process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
+)?.trim();
+
 export const metadata: Metadata = {
+  metadataBase: new URL(publicSiteUrl),
+  alternates: {
+    canonical: '/',
+  },
+  verification: googleSiteVerification
+    ? { google: googleSiteVerification }
+    : undefined,
   title: 'Lighthouse Lodge | Management Suite',
   description: 'Lighthouse Lodge — smart hotel management, bookings, and operations.',
   icons: {
