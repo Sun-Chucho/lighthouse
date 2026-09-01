@@ -9,7 +9,7 @@ export const ROOM_CATEGORIES = {
     label: "Classic",
     price: 80_000,
     rooms: [302, 303, 305, 306, 307, 309, 310, 311, 312, 316],
-    image: "/images/classic-room-main.webp",
+    image: "/images/classic-bed-welcome.webp",
   },
 } as const;
 
