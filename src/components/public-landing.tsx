@@ -120,7 +120,7 @@ export function PublicLanding() {
     <div className="public-page">
       <header className="public-header">
         <a className="public-brand" href="#top" aria-label="Lighthouse Lodge home">
-          <Image src="/logo.jpeg" alt="" width={58} height={58} priority sizes="58px" />
+          <Image src="/logo-192.jpg" alt="" width={48} height={48} priority sizes="48px" />
           <span><strong>Lighthouse</strong><small>Lodge</small></span>
         </a>
         <nav className="public-navigation" aria-label="Main navigation">
@@ -300,7 +300,7 @@ export function PublicLanding() {
       </main>
 
       <footer className="public-footer">
-        <div className="public-footer__brand"><Image src="/logo.jpeg" alt="" width={62} height={62} sizes="62px" /><span><strong>Lighthouse</strong><small>Lodge</small></span></div>
+        <div className="public-footer__brand"><Image src="/logo-192.jpg" alt="" width={48} height={48} sizes="48px" /><span><strong>Lighthouse</strong><small>Lodge</small></span></div>
         <div><p className="public-kicker">Stay</p><a href="#stays">Luxury rooms</a><a href="#stays">Classic rooms</a><a href="#reserve">Request a booking</a><a href="/menu">Food &amp; drinks menu</a></div>
         <div className="public-footer__contact">
           <p className="public-kicker">Contact &amp; location</p>
@@ -311,7 +311,7 @@ export function PublicLanding() {
         </div>
         <div className="public-footer__map">
           <iframe title="Interactive map showing Lighthouse Lodge" src="https://www.google.com/maps?q=-3.3373949,37.3483431&amp;z=17&amp;output=embed" loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen />
-          <a className="public-footer__map-pin" href={LIGHTHOUSE_MAP_URL} target="_blank" rel="noreferrer" aria-label="Open Lighthouse Lodge in Google Maps"><Image src="/logo.jpeg" alt="Lighthouse Lodge map pin" width={42} height={42} sizes="42px" /></a>
+          <a className="public-footer__map-pin" href={LIGHTHOUSE_MAP_URL} target="_blank" rel="noreferrer" aria-label="Open Lighthouse Lodge in Google Maps"><Image src="/logo-192.jpg" alt="Lighthouse Lodge map pin" width={38} height={38} sizes="38px" /></a>
         </div>
         <p className="public-footer__legal">© {new Date().getFullYear()} Lighthouse Lodge. All stays are subject to confirmation.</p>
       </footer>

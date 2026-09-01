@@ -88,13 +88,13 @@ export async function GET(
       orientation: "portrait-primary",
       icons: [
         {
-          src: "/logo.jpeg",
+          src: "/logo-192.jpg",
           sizes: "192x192",
           type: "image/jpeg",
           purpose: "any maskable",
         },
         {
-          src: "/logo.jpeg",
+          src: "/logo-512.jpg",
           sizes: "512x512",
           type: "image/jpeg",
           purpose: "any maskable",

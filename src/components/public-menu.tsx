@@ -103,7 +103,7 @@ export function PublicMenu() {
     <main className={styles.page}>
       <header className={styles.header}>
         <Link href="/" className={styles.brand} aria-label="Back to Lighthouse Lodge">
-          <Image src="/logo.jpeg" alt="Lighthouse Lodge" width={48} height={48} priority sizes="48px" />
+          <Image src="/logo-192.jpg" alt="Lighthouse Lodge" width={42} height={42} priority sizes="42px" />
           <span><strong>Lighthouse</strong><small>Lodge Menu</small></span>
         </Link>
         <Link href="/" className={styles.back}><ChevronLeft size={16} /> Lodge</Link>

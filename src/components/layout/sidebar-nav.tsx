@@ -129,13 +129,14 @@ export function SidebarNav({ role }: { role: Role }) {
     <div className="flex h-full min-h-0 w-64 flex-col bg-black text-white border-r border-sidebar-border">
       <div className="p-6 flex justify-center">
         <Link href="/dashboard" className="group">
-          <div className="w-24 h-24 bg-white rounded-2xl flex items-center justify-center p-2 group-hover:scale-105 transition-transform overflow-hidden shadow-2xl relative border border-slate-700">
+          <div className="w-16 h-16 bg-white rounded-xl flex items-center justify-center p-1.5 group-hover:scale-105 transition-transform overflow-hidden shadow-xl relative border border-slate-700">
             <Image
-              src="/logo.jpeg"
+              src="/logo-192.jpg"
               alt="Lighthouse Lodge Logo"
-              width={96}
-              height={96}
+              width={64}
+              height={64}
               priority
+              sizes="64px"
               className="object-contain"
             />
           </div>
@@ -186,7 +187,7 @@ export function SidebarNav({ role }: { role: Role }) {
         <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-900/90 mb-4 border border-slate-700">
           <div className="w-9 h-9 rounded-lg bg-white overflow-hidden relative border border-white/20 flex items-center justify-center">
             <Image
-              src="/logo.jpeg"
+              src="/logo-192.jpg"
               alt="Lighthouse Lodge"
               width={36}
               height={36}

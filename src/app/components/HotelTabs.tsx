@@ -34,7 +34,7 @@ export default function HotelTabs() {
     <main
       className="flex min-h-screen flex-col items-center justify-center p-4 bg-cover bg-center bg-no-repeat relative"
       style={{
-        backgroundImage: "linear-gradient(rgba(10, 10, 10, 0.96), rgba(10, 10, 10, 0.96)), url('/logo.jpeg')",
+        backgroundImage: "linear-gradient(rgba(10, 10, 10, 0.96), rgba(10, 10, 10, 0.96)), url('/logo-512.jpg')",
         backgroundSize: "contain",
       }}
     >
@@ -42,7 +42,7 @@ export default function HotelTabs() {
         <div className="p-6 text-center border-b border-[#b98025]/30 bg-[#1d110a]/90">
           <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-white shadow-2xl overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.jpeg" alt="Lighthouse Lodge logo" className="h-full w-full object-contain" />
+            <img src="/logo-192.jpg" alt="Lighthouse Lodge logo" className="h-full w-full object-contain" />
           </div>
           <h1 className="text-2xl font-black tracking-tight text-white">LIGHTHOUSE LODGE</h1>
           <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#e0b762] mt-1">Lodge Management Suite</p>

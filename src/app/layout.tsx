@@ -31,9 +31,9 @@ export const metadata: Metadata = {
   title: 'Lighthouse Lodge | Management Suite',
   description: 'Lighthouse Lodge — smart hotel management, bookings, and operations.',
   icons: {
-    icon: '/logo.jpeg',
-    shortcut: '/logo.jpeg',
-    apple: [{ url: '/logo.jpeg', sizes: 'any', type: 'image/jpeg' }],
+    icon: [{ url: '/logo-192.jpg', sizes: '192x192', type: 'image/jpeg' }],
+    shortcut: '/logo-192.jpg',
+    apple: [{ url: '/logo-192.jpg', sizes: '192x192', type: 'image/jpeg' }],
   },
   appleWebApp: {
     capable: true,

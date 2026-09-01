@@ -72,7 +72,7 @@ function getProfileMembers(profiles: LoginProfiles | null): StaffMember[] {
       id: `${role}-${normalizeStaffName(user.username).replace(/\s+/g, "-")}`,
       name: user.username,
       role,
-      avatar: "/logo.jpeg",
+      avatar: "/logo-192.jpg",
       shift: profiles[role]?.shift === "night" ? "Night" as const : "Day" as const,
       blocked: user.blocked === true,
     })),
@@ -197,7 +197,7 @@ export default function StaffPage() {
       id,
       name: username,
       role: newRole,
-      avatar: "/logo.jpeg",
+      avatar: "/logo-192.jpg",
       shift: newShift,
       blocked: false,
     };
