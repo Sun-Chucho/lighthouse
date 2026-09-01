@@ -56,6 +56,7 @@ const ALL_OPERATIONAL_KEYS = [
   "lighthouse-laundry-records",
   "lighthouse-company-stock",
   "lighthouse-website-bookings",
+  "lighthouse-website-menu-orders",
   "lighthouse-live-chat",
   "lighthouse-menu-audit-trail",
   "lighthouse-kitchen-purchase-session",
@@ -73,8 +74,8 @@ const STARTUP_SYNC_KEYS_BY_ROLE: Record<Role, readonly string[]> = {
   director: ALL_OPERATIONAL_KEYS,
   inventory: ALL_OPERATIONAL_KEYS.filter((key) => key.includes("settings") || key.includes("login") || key.includes("store") || key.includes("inventory") || key.includes("stock")),
   cashier: ALL_OPERATIONAL_KEYS.filter((key) => key.includes("settings") || key.includes("login") || key.includes("cashier") || key.includes("rooms") || key.includes("booking") || key.includes("laundry") || key.includes("live-chat")),
-  kitchen: ALL_OPERATIONAL_KEYS.filter((key) => key.includes("settings") || key.includes("login") || key.includes("kitchen") || key.includes("store") || key.includes("inventory") || key.includes("cancelled")),
-  barista: ALL_OPERATIONAL_KEYS.filter((key) => key.includes("settings") || key.includes("login") || key.includes("barista") || key.includes("store") || key.includes("inventory") || key.includes("cancelled")),
+  kitchen: ALL_OPERATIONAL_KEYS.filter((key) => key.includes("settings") || key.includes("login") || key.includes("kitchen") || key.includes("store") || key.includes("inventory") || key.includes("cancelled") || key.includes("menu-orders")),
+  barista: ALL_OPERATIONAL_KEYS.filter((key) => key.includes("settings") || key.includes("login") || key.includes("barista") || key.includes("store") || key.includes("inventory") || key.includes("cancelled") || key.includes("menu-orders")),
 };
 
 const ALLOWED_ROUTES: Record<Role, string[]> = {

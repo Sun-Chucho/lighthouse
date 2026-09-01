@@ -20,10 +20,11 @@ import {
   Wifi,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import Link from "next/link";
+import Image from "next/image";
 import { useSync } from "../context/sync-context";
 import { formatPrice, ROOM_CATEGORIES } from "../data/rooms";
-import { STAFF_PORTAL_PATH } from "../types/roles";
+
+const LIGHTHOUSE_MAP_URL = "https://www.google.co.tz/maps/place/Light+House+Lodge/@-3.3373949,37.3483431,17z/data=!3m1!4b1!4m6!3m5!1s0x1839d96d70c60d93:0x98fbfa9c8b93d5c5!8m2!3d-3.3373949!4d37.3483431!16s%2Fg%2F11zfgrg3dv?entry=ttu&g_ep=EgoyMDI2MDgyNi4wIKXMDSoASAFQAw%3D%3D";
 
 type StayForm = {
   checkIn: string;
@@ -111,12 +112,13 @@ export function PublicLanding() {
     <div className="public-page">
       <header className="public-header">
         <a className="public-brand" href="#top" aria-label="Lighthouse Lodge home">
-          <img src="/logo.jpeg" alt="" width={58} height={58} />
+          <Image src="/logo.jpeg" alt="" width={58} height={58} priority sizes="58px" />
           <span><strong>Lighthouse</strong><small>Lodge</small></span>
         </a>
         <nav className="public-navigation" aria-label="Main navigation">
           <a href="#stays">The stays</a>
           <a href="#experience">Experience</a>
+          <a href="/menu">Menu</a>
           <a href="#reserve">Reservations</a>
         </nav>
         <a className="public-header__book" href="#reserve">Plan your stay <ArrowDownRight size={17} /></a>
@@ -275,8 +277,8 @@ export function PublicLanding() {
       </main>
 
       <footer className="public-footer">
-        <div className="public-footer__brand"><img src="/logo.jpeg" alt="" width={62} height={62} /><span><strong>Lighthouse</strong><small>Lodge</small></span></div>
-        <div><p className="public-kicker">Stay</p><a href="#stays">Luxury rooms</a><a href="#stays">Classic rooms</a><a href="#reserve">Request a booking</a></div>
+        <div className="public-footer__brand"><Image src="/logo.jpeg" alt="" width={62} height={62} sizes="62px" /><span><strong>Lighthouse</strong><small>Lodge</small></span></div>
+        <div><p className="public-kicker">Stay</p><a href="#stays">Luxury rooms</a><a href="#stays">Classic rooms</a><a href="#reserve">Request a booking</a><a href="/menu">Food &amp; drinks menu</a></div>
         <div className="public-footer__contact">
           <p className="public-kicker">Contact &amp; location</p>
           <a href="https://www.google.co.tz/maps/place/Light+House+Lodge/@-3.3373949,37.3483431,17z/data=!3m1!4b1!4m6!3m5!1s0x1839d96d70c60d93:0x98fbfa9c8b93d5c5!8m2!3d-3.3373949!4d37.3483431!16s%2Fg%2F11zfgrg3dv?entry=ttu&amp;g_ep=EgoyMDI2MDgyNi4wIKXMDSoASAFQAw%3D%3D" target="_blank" rel="noreferrer" aria-label="Open Lighthouse Lodge in Google Maps"><MapPin size={15} /> Find us on Google Maps</a>
@@ -284,7 +286,10 @@ export function PublicLanding() {
           <a href="mailto:lighthouselodgetz@gmail.com"><Mail size={15} /> lighthouselodgetz@gmail.com</a>
           <a href="tel:+255725013998"><Phone size={15} /> +255725013998</a>
         </div>
-        <div className="public-footer__staff"><p className="public-kicker">Operations</p><Link href={STAFF_PORTAL_PATH}>Staff access <ArrowRight size={15} /></Link></div>
+        <div className="public-footer__map">
+          <iframe title="Interactive map showing Lighthouse Lodge" src="https://www.google.com/maps?q=-3.3373949,37.3483431&amp;z=17&amp;output=embed" loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen />
+          <a className="public-footer__map-pin" href={LIGHTHOUSE_MAP_URL} target="_blank" rel="noreferrer" aria-label="Open Lighthouse Lodge in Google Maps"><Image src="/logo.jpeg" alt="Lighthouse Lodge map pin" width={42} height={42} sizes="42px" /></a>
+        </div>
         <p className="public-footer__legal">© {new Date().getFullYear()} Lighthouse Lodge. All stays are subject to confirmation.</p>
       </footer>
     </div>

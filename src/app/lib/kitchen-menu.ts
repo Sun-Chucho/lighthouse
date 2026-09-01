@@ -19,8 +19,11 @@ export interface KitchenMenuItem {
   price: number;
   category: KitchenMenuCategory;
   prepMinutes: number;
+  description?: string;
   updatedAt?: number;
 }
+
+import { PUBLIC_KITCHEN_MENU } from "@/app/lib/public-kitchen-menu";
 
 export const KITCHEN_CATEGORY_OPTIONS: Array<{ value: KitchenMenuCategory; label: string }> = [
   { value: "salad", label: "Salads" },
@@ -42,7 +45,7 @@ export const KITCHEN_CATEGORY_LABELS = Object.fromEntries(
   KITCHEN_CATEGORY_OPTIONS.map((option) => [option.value, option.label]),
 ) as Record<KitchenMenuCategory, string>;
 
-export const DEFAULT_KITCHEN_MENU: KitchenMenuItem[] = [];
+export const DEFAULT_KITCHEN_MENU: KitchenMenuItem[] = PUBLIC_KITCHEN_MENU;
 
 function isKitchenMenuCategory(value: unknown): value is KitchenMenuCategory {
   return KITCHEN_CATEGORY_OPTIONS.some((option) => option.value === value);
@@ -73,5 +76,5 @@ export function mergeKitchenMenuItems(menuItems: KitchenMenuItem[]): KitchenMenu
   for (const item of menuItems) {
     if (isValidKitchenMenuItem(item)) uniqueItems.set(item.id, item);
   }
-  return Array.from(uniqueItems.values());
+  return uniqueItems.size > 0 ? Array.from(uniqueItems.values()) : DEFAULT_KITCHEN_MENU;
 }

@@ -301,6 +301,7 @@ export const FIREBASE_SYNC_KEYS = [
   "lighthouse-settings",
   "lighthouse-hardware-settings",
   "lighthouse-website-bookings",
+  "lighthouse-website-menu-orders",
   "lighthouse-live-chat",
   "lighthouse-expenses",
   "lighthouse-laundry-records",

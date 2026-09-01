@@ -34,6 +34,7 @@ import { KitchenSessionManager } from "@/components/dashboard/kitchen-session-ma
 import { ChefHat, Minus, Plus, Receipt, Search, Trash2, CheckCircle2, XCircle } from "lucide-react";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { hydrateStorageKeyFromFirebase, subscribeToSyncedStorageKey } from "@/app/lib/firebase-sync";
+import { WebsiteMenuOrderSidebar } from "@/components/dashboard/website-menu-order-sidebar";
 
 type KitchenCategory = "all" | KitchenMenuCategory;
 type ServiceMode = "restaurant" | "room-service" | "take-away";
@@ -1281,9 +1282,12 @@ export default function KitchenPage() {
           </div>
         </div>
 
-        <Badge variant="outline" className="h-10 px-4 justify-center border-primary text-primary font-black uppercase text-[10px] tracking-widest">
-          {tickets.length} Active Orders
-        </Badge>
+        <div className="flex flex-wrap items-center gap-3">
+          <WebsiteMenuOrderSidebar department="kitchen" />
+          <Badge variant="outline" className="h-10 px-4 justify-center border-primary text-primary font-black uppercase text-[10px] tracking-widest">
+            {tickets.length} Active Orders
+          </Badge>
+        </div>
       </header>
       {isDirector && (
         <Card className="border-emerald-200 bg-emerald-50/60 shadow-none">

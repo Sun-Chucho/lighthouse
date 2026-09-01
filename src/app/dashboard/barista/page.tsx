@@ -34,6 +34,7 @@ import { CheckCircle2, Coffee, Minus, Pencil, Plus, Receipt, Search, Trash2, Use
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { hydrateStorageKeyFromFirebase, subscribeToSyncedStorageKey } from "@/app/lib/firebase-sync";
 import { readActiveSessionUsername, STORAGE_LOGIN_PROFILES, subscribeToSessionIdentity } from "@/app/lib/login-profiles";
+import { WebsiteMenuOrderSidebar } from "@/components/dashboard/website-menu-order-sidebar";
 
 type BaristaCategory =
   | "all"
@@ -2809,6 +2810,7 @@ export default function BaristaPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <WebsiteMenuOrderSidebar department="bar" />
           <SyncStatusIndicator />
           <Badge variant="outline" className="h-10 px-4 justify-center border-primary text-primary font-black uppercase text-[10px] tracking-widest">
             {activeTickets.length} Active Orders
