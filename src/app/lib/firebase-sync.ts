@@ -336,6 +336,85 @@ export const LEGACY_DEMO_KEYS = [
   "lighthouse-barista-seq",
 ] as const;
 
+// Sales were intentionally restarted on 10 September 2026. Keep this marker in
+// the shipped client so a device that was offline during the reset cannot merge
+// its old room, kitchen, or bar sales back into the clean cloud snapshots.
+export const SALES_RESET_VERSION = "2026-09-10-v1";
+const SALES_RESET_LOCAL_MARKER = `${LIGHTHOUSE_LOCAL_STORAGE_PREFIX}sales-reset-version`;
+
+function readLocalJsonValue(key: string) {
+  const raw = window.localStorage.getItem(key);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function getPreservedMenuItems(canonicalKey: string, legacyMenuKey: string) {
+  const canonical = readLocalJsonValue(getUnifiedLocalKey(canonicalKey)) as { menuItems?: unknown[] } | null;
+  if (Array.isArray(canonical?.menuItems)) return canonical.menuItems;
+  const legacy = readLocalJsonValue(getUnifiedLocalKey(legacyMenuKey));
+  return Array.isArray(legacy) ? legacy : [];
+}
+
+export function applyOneTimeSalesResetToLocalCache() {
+  if (typeof window === "undefined" || window.localStorage.getItem(SALES_RESET_LOCAL_MARKER) === SALES_RESET_VERSION) {
+    return false;
+  }
+
+  const kitchenMenuItems = getPreservedMenuItems("lighthouse-kitchen-state", "lighthouse-kitchen-menu");
+  const baristaMenuItems = getPreservedMenuItems("lighthouse-barista-state", "lighthouse-barista-menu");
+  const resetSnapshots: Record<string, unknown> = {
+    "lighthouse-cashier-state": { transactions: [], receiptSeq: 1 },
+    "lighthouse-kitchen-state": { tickets: [], ticketSeq: 1, payments: [], menuItems: kitchenMenuItems },
+    "lighthouse-barista-state": { tickets: [], ticketSeq: 1, payments: [], menuItems: baristaMenuItems },
+  };
+
+  for (const [key, value] of Object.entries(resetSnapshots)) {
+    window.localStorage.setItem(getUnifiedLocalKey(key), JSON.stringify(value));
+    clearPendingSync(key);
+    delete _pendingLocalWrites[key];
+  }
+
+  mirrorCanonicalStateToLegacyLocal("lighthouse-cashier-state", resetSnapshots["lighthouse-cashier-state"]);
+  mirrorCanonicalStateToLegacyLocal("lighthouse-kitchen-state", resetSnapshots["lighthouse-kitchen-state"]);
+  mirrorCanonicalStateToLegacyLocal("lighthouse-barista-state", resetSnapshots["lighthouse-barista-state"]);
+
+  // Prevent the pre-namespace migration from restoring an old cashier copy.
+  [
+    "lighthouse-cashier-state",
+    "lighthouse-cashier-transactions",
+    "lighthouse-cashier-seq",
+    "lighthouse-kitchen-tickets",
+    "lighthouse-kitchen-seq",
+    "lighthouse-kitchen-payments",
+    "lighthouse-barista-orders",
+    "lighthouse-barista-seq",
+    "lighthouse-barista-payments",
+  ].forEach((key) => window.localStorage.removeItem(key));
+  window.localStorage.setItem(`${LIGHTHOUSE_LOCAL_STORAGE_PREFIX}verified-migration-v1`, "1");
+
+  const roomsKey = getUnifiedLocalKey("lighthouse-rooms-state");
+  const rooms = readLocalJsonValue(roomsKey);
+  if (Array.isArray(rooms)) {
+    window.localStorage.setItem(
+      roomsKey,
+      JSON.stringify(rooms.map((room) => (
+        room && typeof room === "object" && (room as { status?: unknown }).status === "occupied"
+          ? { ...room, status: "available" }
+          : room
+      ))),
+    );
+    clearPendingSync("lighthouse-rooms-state");
+    delete _pendingLocalWrites["lighthouse-rooms-state"];
+  }
+
+  window.localStorage.setItem(SALES_RESET_LOCAL_MARKER, SALES_RESET_VERSION);
+  return true;
+}
+
 export function migrateVerifiedLighthouseLocalData() {
   if (typeof window === "undefined") return;
   const marker = `${LIGHTHOUSE_LOCAL_STORAGE_PREFIX}verified-migration-v1`;
@@ -449,6 +528,10 @@ function mirrorCanonicalStateToLegacyLocal(key: string, value: unknown) {
     setLocalCache("lighthouse-barista-menu", JSON.stringify(Array.isArray(snapshot.menuItems) ? snapshot.menuItems : []));
     localStorage.removeItem("lighthouse-demo-seed-version");
   }
+}
+
+if (typeof window !== "undefined") {
+  applyOneTimeSalesResetToLocalCache();
 }
 
 function buildInventoryItemsFromStoreItems(storeItems: MainStoreItem[]) {

@@ -23,6 +23,10 @@
     "firebase:verify-database": "node scripts/verify-realtime-database.mjs",
     "firebase:verify-production-sync": "node scripts/verify-production-realtime-sync.mjs",
     "firebase:verify": "node scripts/verify-firebase-admin.mjs",
+    "firebase:reset-sales": "node scripts/reset-sales.mjs",
+    "firebase:reset-sales:apply": "node scripts/reset-sales.mjs --apply",
+    "firebase:restore-bar-inventory": "node --experimental-strip-types --no-warnings scripts/restore-bar-inventory-from-setup.mjs",
+    "firebase:restore-bar-inventory:apply": "node --experimental-strip-types --no-warnings scripts/restore-bar-inventory-from-setup.mjs --apply",
     "verify:menu-sync": "node --experimental-strip-types --no-warnings scripts/verify-menu-sync.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"
