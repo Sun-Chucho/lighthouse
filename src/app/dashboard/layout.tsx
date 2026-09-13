@@ -233,15 +233,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </header>
 
-        <main className={cn("min-h-0 min-w-0 flex-1 overflow-y-auto p-4 md:p-8", isDirector && "pb-24 md:pb-8")}>{children}</main>
+        <main className={cn("min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-8", isDirector && "pb-24 md:pb-8")}>{children}</main>
       </div>
 
       {isDirector && (
-        <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[#140c07]/95 px-3 pb-3 pt-2 text-white backdrop-blur md:hidden">
+        <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[#140c07]/95 px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 text-white backdrop-blur md:hidden">
           <div className="grid grid-cols-6 gap-1">
             {DIRECTOR_MOBILE_NAV.map((item) => {
               const active = item.href === "/dashboard" ? pathname === item.href : pathname.startsWith(item.href);
-              return <button key={item.href} type="button" onClick={() => router.push(item.href)} className={cn("flex h-14 flex-col items-center justify-center gap-1 rounded-lg text-[10px] font-black uppercase text-white/60", active && "bg-[#cf9c43] text-[#140c07]")}><item.icon className="h-4 w-4" />{item.label}</button>;
+              return <button key={item.href} type="button" onClick={() => router.push(item.href)} className={cn("touch-manipulation flex h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-lg text-[9px] font-black uppercase text-white/60", active && "bg-[#cf9c43] text-[#140c07]")}><item.icon className="h-4 w-4 shrink-0" /><span className="max-w-full truncate">{item.label}</span></button>;
             })}
           </div>
         </nav>

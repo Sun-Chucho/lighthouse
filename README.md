@@ -12,7 +12,7 @@ Lighthouse Lodge is an offline-first booking website and role-based staff applic
 - Dark brown, black, cream, and gold branding using the supplied Lighthouse logo
 - Twenty configured rooms split into Luxury and Classic categories
 - Five visible staff portals at `/staff`
-- Unlisted Managing Director login at `/login`
+- Unlisted Managing Director entry at `/md`
 - Role-specific four-digit staff password access with no email field
 - Firebase Anonymous Authentication for public booking requests
 - Secured Firebase Realtime Database synchronization and a durable local booking outbox
@@ -31,9 +31,9 @@ Lighthouse Lodge is an offline-first booking website and role-based staff applic
 | Inventory Manager | `/im` | `/dashboard/inventory` |
 | Kitchen Operations | `/kp` | `/dashboard/kitchen` |
 | Bar & POS | `/bp` | `/dashboard/barista` |
-| Managing Director, unlisted | `/login` | `/dashboard` |
+| Managing Director, unlisted | `/md` | `/dashboard` |
 
-The Managing Director portal is intentionally omitted from `/staff` and remains available directly at `/login`. Logging out from any dashboard returns to `/staff`. The Windows application also starts at `/staff` on every launch.
+The Managing Director portal is intentionally omitted from `/staff` and remains available directly at `/md`. Selecting the Lighthouse logo opens the MD dashboard. The legacy `/login` address redirects to `/md`. Logging out from any dashboard returns to `/staff`. The Windows application also starts at `/staff` on every launch.
 
 ## Current role passwords
 
@@ -44,7 +44,6 @@ The Managing Director portal is intentionally omitted from `/staff` and remains 
 | Inventory Manager | `1234` |
 | Kitchen Operations | `1234` |
 | Bar & POS | `1234` |
-| Managing Director | `1234` |
 
 These shared PINs are deliberately implemented as requested for the current local/offline workflow. Because the application is publicly distributed, they are not a replacement for individual server-verified staff identities when sensitive operational data is added later.
 

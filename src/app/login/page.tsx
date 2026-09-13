@@ -1,11 +1,6 @@
-import type { Metadata } from "next";
-import { RoleLoginPage } from "@/components/auth/role-login-page";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Director Login | Lighthouse Lodge",
-  description: "Private Lighthouse Lodge director access.",
-};
-
+// Keep the former private address useful while removing the MD PIN screen.
 export default function DirectorLoginPage() {
-  return <RoleLoginPage role="director" />;
+  redirect("/md");
 }
