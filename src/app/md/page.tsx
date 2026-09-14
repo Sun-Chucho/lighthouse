@@ -32,22 +32,26 @@ export default function ManagingDirectorEntryPage() {
 
   return (
     <main className="grid min-h-[100dvh] place-items-center bg-[#140c07] p-6">
-      <button
-        type="button"
-        aria-label="Open Managing Director dashboard"
-        onClick={() => void enterDashboard()}
-        disabled={opening}
-        className="touch-manipulation rounded-full outline-none transition-transform duration-200 hover:scale-105 focus-visible:ring-4 focus-visible:ring-[#efd18e] focus-visible:ring-offset-4 focus-visible:ring-offset-[#140c07] active:scale-95 disabled:cursor-wait"
-      >
-        <Image
-          src="/logo.jpeg"
-          alt="Lighthouse Lodge"
-          width={512}
-          height={512}
-          priority
-          className="h-auto w-[min(72vw,19rem)] rounded-full"
-        />
-      </button>
+      <div className="flex flex-col items-center gap-5 text-center">
+        <button
+          type="button"
+          aria-label="Open Managing Director dashboard"
+          onClick={() => void enterDashboard()}
+          disabled={opening}
+          className="touch-manipulation rounded-full outline-none transition-transform duration-200 hover:scale-105 focus-visible:ring-4 focus-visible:ring-[#efd18e] focus-visible:ring-offset-4 focus-visible:ring-offset-[#140c07] active:scale-95 disabled:cursor-wait"
+        >
+          <Image
+            src="/logo-192.jpg"
+            alt="Lighthouse Lodge"
+            width={192}
+            height={192}
+            priority
+            unoptimized
+            className="h-auto w-[min(56vw,12rem)] rounded-full"
+          />
+        </button>
+        <p className="text-xs font-black uppercase tracking-[0.24em] text-[#efd18e]">Tap the logo to enter</p>
+      </div>
     </main>
   );
 }
