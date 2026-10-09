@@ -33,7 +33,7 @@ type SyncContextValue = {
   status: SyncStatus;
   pendingCount: number;
   lastError: string | null;
-  queueBookingInquiry: (inquiry: BookingInquiryInput) => Promise<string>;
+  queueBookingInquiry: (inquiry: BookingInquiryInput) => Promise<{ id: string; submitted: boolean }>;
   retrySync: () => Promise<void>;
 };
 
@@ -100,7 +100,10 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       const { getAuth } = await import("firebase/auth");
       const idToken = await getAuth(firebaseApp).currentUser?.getIdToken();
       if (!idToken) throw new Error("Guest authentication is unavailable.");
-      for (const inquiry of queued) {
+      let firstDeliveryError: string | null = null;
+      // A stale or invalid earlier request must not prevent a new reservation
+      // from reaching reception.
+      for (const inquiry of [...queued].reverse()) {
         const response = await fetch("/api/bookings", {
           method: "POST",
           headers: {
@@ -122,12 +125,15 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         });
         if (!response.ok) {
           const result = await response.json().catch(() => ({})) as { error?: string };
-          throw new Error(result.error ?? `Booking sync failed (${response.status}).`);
+          firstDeliveryError ??= result.error ?? `Booking sync failed (${response.status}).`;
+          if (response.status === 429 || response.status >= 500) break;
+          continue;
         }
         const remaining = readOutbox().filter((item) => item.id !== inquiry.id);
         writeOutbox(remaining);
         setPendingCount(remaining.length);
       }
+      if (firstDeliveryError) throw new Error(firstDeliveryError);
       setStatus("online");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -180,9 +186,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     const nextOutbox = [...readOutbox(), inquiry];
     writeOutbox(nextOutbox);
     setPendingCount(nextOutbox.length);
-    if (navigator.onLine) void flushOutbox();
+    if (navigator.onLine) await flushOutbox();
     else setStatus("offline");
-    return inquiry.id;
+    return { id: inquiry.id, submitted: !readOutbox().some((item) => item.id === inquiry.id) };
   }, [flushOutbox]);
 
   const value = useMemo<SyncContextValue>(() => ({

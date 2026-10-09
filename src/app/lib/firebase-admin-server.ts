@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
+import { getDatabaseWithUrl } from "firebase-admin/database";
 
 const PROJECT_ID = "lighthouse-bf85b";
 let adminApp: App | null = null;
@@ -36,4 +37,11 @@ function getAdminApp() {
 
 export function getLighthouseAdminAuth() {
   return getAuth(getAdminApp());
+}
+
+export function getLighthouseAdminDatabase() {
+  return getDatabaseWithUrl(
+    process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL ?? "https://lighthouse-bf85b-default-rtdb.firebaseio.com/",
+    getAdminApp(),
+  );
 }

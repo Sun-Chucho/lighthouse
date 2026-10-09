@@ -28,6 +28,7 @@ import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 import { isBookingStillActive, readRoomsState, syncRoomsStateFromBookings, updateRoomStatusByNumber } from "@/app/lib/rooms-storage";
 import { hydrateStorageKeyFromFirebase, subscribeToSyncedStorageKey } from "@/app/lib/firebase-sync";
 import { getScopedStorageKey } from "@/app/lib/storage";
+import { readWebsiteBookings, STORAGE_WEBSITE_BOOKINGS, type WebsiteBookingRecord } from "@/app/lib/website-bookings";
 
 type PaymentMethod = "cash" | "card" | "mobile-money" | "credit";
 type TransactionTab = "completed" | "credit";
@@ -172,6 +173,7 @@ export default function BookingPage() {
 
   const [rooms, setRooms] = useState<Room[]>(readRoomsState());
   const [transactions, setTransactions] = useState<BookingRecord[]>([]);
+  const [reservations, setReservations] = useState<WebsiteBookingRecord[]>([]);
   const [receiptSeq, setReceiptSeq] = useState(1);
   const [role, setRole] = useState<Role>("cashier");
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
@@ -213,6 +215,14 @@ export default function BookingPage() {
       unsubscribeCashier();
       unsubscribeRooms();
     };
+  }, []);
+
+  useEffect(() => {
+    setReservations(readWebsiteBookings());
+    void hydrateStorageKeyFromFirebase(STORAGE_WEBSITE_BOOKINGS, true);
+    return subscribeToSyncedStorageKey<WebsiteBookingRecord[]>(STORAGE_WEBSITE_BOOKINGS, (value) => {
+      setReservations(Array.isArray(value) ? value : readWebsiteBookings());
+    });
   }, []);
 
   useEffect(() => {
@@ -641,6 +651,9 @@ export default function BookingPage() {
           <Badge variant="outline" className="h-10 px-4 justify-center border-primary text-primary font-black uppercase text-[10px] tracking-widest">
             {totalTransactions} Transactions
           </Badge>
+          <Badge variant="outline" className="h-10 px-4 justify-center border-amber-500 bg-amber-50 text-amber-800 font-black uppercase text-[10px] tracking-widest">
+            {reservations.length} Online Reservations
+          </Badge>
           <Badge variant="outline" className="h-10 px-4 justify-center font-black uppercase text-[10px] tracking-widest bg-white">
             TSh {todayRevenueTSh.toLocaleString()} Today
           </Badge>
@@ -653,6 +666,54 @@ export default function BookingPage() {
           </CardContent>
         </Card>
       )}
+
+      <Card id="reservations" className="border-amber-200 shadow-sm">
+        <CardHeader className="bg-amber-50/60">
+          <CardTitle className="text-xl font-black uppercase tracking-tight">Reservations</CardTitle>
+          <CardDescription>Online requests awaiting reception review. A room is assigned when the booking is completed below.</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Reference</TableHead>
+                <TableHead>Guest</TableHead>
+                <TableHead>Stay</TableHead>
+                <TableHead>Contact</TableHead>
+                <TableHead>Payment</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {reservations.map((reservation) => (
+                <TableRow key={reservation.id}>
+                  <TableCell className="font-bold">{reservation.bookingReference}</TableCell>
+                  <TableCell>
+                    <p className="font-bold">{reservation.fullName}</p>
+                    <p className="text-xs text-muted-foreground">{reservation.roomType} · {reservation.guests} guest{reservation.guests === 1 ? "" : "s"}</p>
+                  </TableCell>
+                  <TableCell>
+                    <p className="font-bold">{reservation.checkIn} to {reservation.checkOut}</p>
+                    <p className="text-xs text-muted-foreground">{reservation.nights} night{reservation.nights === 1 ? "" : "s"} · TSh {reservation.totalAmount.toLocaleString()}</p>
+                  </TableCell>
+                  <TableCell>
+                    <p>{reservation.phone}</p>
+                    <p className="text-xs text-muted-foreground">{reservation.email}</p>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={reservation.paymentStatus === "paid" ? "border-emerald-500 text-emerald-700" : "border-amber-500 text-amber-800"}>
+                      {reservation.paymentStatus === "paid" ? "Paid" : reservation.paymentStatus === "pending" ? "Payment pending" : "Awaiting payment"}
+                    </Badge>
+                    {reservation.status === "new" && <p className="mt-1 text-xs font-bold text-amber-800">New request</p>}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {reservations.length === 0 && (
+                <TableRow><TableCell colSpan={5} className="py-10 text-center text-muted-foreground">No online reservations have reached reception yet.</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       {!isDirector && (
       <Card className="shadow-2xl border-none bg-white overflow-hidden">

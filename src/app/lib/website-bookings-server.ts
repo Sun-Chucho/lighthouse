@@ -1,17 +1,19 @@
-import { readServerSyncedStorageValue, writeServerSyncedStorageValue } from "@/app/lib/firebase-server";
+import { getLighthouseAdminDatabase } from "@/app/lib/firebase-admin-server";
 import {
   STORAGE_WEBSITE_BOOKINGS,
   type WebsiteBookingPaymentStatus,
   type WebsiteBookingRecord,
 } from "@/app/lib/website-booking-types";
 
-export async function appendWebsiteBookingServer(booking: WebsiteBookingRecord) {
-  const current = (await readServerSyncedStorageValue<WebsiteBookingRecord[]>(STORAGE_WEBSITE_BOOKINGS)) ?? [];
-  if (current.some((entry) => entry.bookingReference === booking.bookingReference)) {
-    return;
-  }
+const bookingsRef = () => getLighthouseAdminDatabase().ref(`lighthouse-v1/${STORAGE_WEBSITE_BOOKINGS}`);
 
-  await writeServerSyncedStorageValue(STORAGE_WEBSITE_BOOKINGS, [booking, ...current]);
+export async function appendWebsiteBookingServer(booking: WebsiteBookingRecord) {
+  await bookingsRef().transaction((value: WebsiteBookingRecord[] | null) => {
+    const current = Array.isArray(value) ? value : [];
+    return current.some((entry) => entry.bookingReference === booking.bookingReference)
+      ? undefined
+      : [booking, ...current];
+  });
 }
 
 export async function updateWebsiteBookingPaymentServer(
@@ -21,23 +23,16 @@ export async function updateWebsiteBookingPaymentServer(
 ) {
   if (!bookingReference.trim()) return false;
 
-  const current = (await readServerSyncedStorageValue<WebsiteBookingRecord[]>(STORAGE_WEBSITE_BOOKINGS)) ?? [];
   let changed = false;
   const checkedAt = new Date().toISOString();
-  const next = current.map((booking) => {
-    if (booking.bookingReference !== bookingReference) return booking;
+  await bookingsRef().transaction((value: WebsiteBookingRecord[] | null) => {
+    const current = Array.isArray(value) ? value : [];
+    if (!current.some((booking) => booking.bookingReference === bookingReference)) return undefined;
     changed = true;
-    return {
-      ...booking,
-      paymentStatus,
-      paymentGatewayState: gatewayState,
-      paymentCheckedAt: checkedAt,
-    };
+    return current.map((booking) => booking.bookingReference === bookingReference
+      ? { ...booking, paymentStatus, paymentGatewayState: gatewayState, paymentCheckedAt: checkedAt }
+      : booking);
   });
-
-  if (changed) {
-    await writeServerSyncedStorageValue(STORAGE_WEBSITE_BOOKINGS, next);
-  }
 
   return changed;
 }

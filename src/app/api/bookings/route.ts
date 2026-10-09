@@ -36,14 +36,14 @@ const BLOCKED_UA_PATTERNS = [
 ] as const;
 
 const bookingSchema = z.object({
-  fullName: z.string().trim().min(2).max(80).regex(/^[\p{L}\s.'-]+$/u, "Name contains invalid characters"),
-  email: z.string().trim().toLowerCase().email().max(120),
-  phone: z.string().trim().min(7).max(24).regex(/^[+0-9\s().-]+$/, "Phone number format is invalid"),
+  fullName: z.string().trim().min(2).max(120).regex(/^[\p{L}\s.'-]+$/u, "Name contains invalid characters"),
+  email: z.string().trim().toLowerCase().email().max(160),
+  phone: z.string().trim().min(7).max(40).regex(/^[+0-9\s().-]+$/, "Phone number format is invalid"),
   roomType: z.enum(["luxury", "classic"]),
   checkIn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   checkOut: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  guests: z.number().int().min(1).max(4),
-  specialRequest: z.string().trim().max(400).optional().default(""),
+  guests: z.number().int().min(1).max(6),
+  specialRequest: z.string().trim().max(600).optional().default(""),
   website: z.string().optional(),
   formStartedAt: z.number().int().nonnegative().optional(),
   checkoutAction: z.enum(["reservation", "payment"]).optional().default("reservation"),

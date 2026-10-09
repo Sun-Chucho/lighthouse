@@ -105,6 +105,7 @@ export function PublicLanding() {
   const [form, setForm] = useState<StayForm>(INITIAL_FORM);
   const [formError, setFormError] = useState("");
   const [requestId, setRequestId] = useState("");
+  const [requestSubmitted, setRequestSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [activeGallerySlide, setActiveGallerySlide] = useState(0);
   const [galleryPaused, setGalleryPaused] = useState(false);
@@ -158,9 +159,10 @@ export function PublicLanding() {
     if (!datesAreValid()) return;
     setSubmitting(true);
     setRequestId("");
+    setRequestSubmitted(false);
 
     try {
-      const id = await queueBookingInquiry({
+      const result = await queueBookingInquiry({
         guestName: form.guestName,
         email: form.email,
         phone: form.phone,
@@ -170,7 +172,8 @@ export function PublicLanding() {
         roomType: form.roomType,
         note: form.note,
       });
-      setRequestId(id);
+      setRequestId(result.id);
+      setRequestSubmitted(result.submitted);
     } catch {
       setFormError("Your request could not be saved. Please check the details and try again.");
     } finally {
@@ -382,14 +385,14 @@ export function PublicLanding() {
             <label><span>Full name</span><input type="text" required minLength={2} maxLength={120} autoComplete="name" value={form.guestName} onChange={(event) => updateField("guestName", event.target.value)} placeholder="Your name" /></label>
             <div className="reservation-form__row">
               <label><span>Email</span><input type="email" required maxLength={160} autoComplete="email" value={form.email} onChange={(event) => updateField("email", event.target.value)} placeholder="you@example.com" /></label>
-              <label><span>Phone</span><input type="tel" required minLength={5} maxLength={40} autoComplete="tel" value={form.phone} onChange={(event) => updateField("phone", event.target.value)} placeholder="Your phone number" /></label>
+              <label><span>Phone</span><input type="tel" required minLength={7} maxLength={40} autoComplete="tel" value={form.phone} onChange={(event) => updateField("phone", event.target.value)} placeholder="Your phone number" /></label>
             </div>
             <label><span>Anything we should know? <small>Optional</small></span><textarea maxLength={600} rows={3} value={form.note} onChange={(event) => updateField("note", event.target.value)} placeholder="Arrival time, room preference, or a special request" /></label>
             {formError ? <p className="reservation-form__error" role="alert">{formError}</p> : null}
             {requestId ? (
               <div className="reservation-success" role="status">
                 <span><Check size={18} /></span>
-                <p><strong>Request saved.</strong><small>{status === "offline" ? "It will send automatically when internet returns." : "It is being synchronized with Lighthouse reception."}</small></p>
+                <p><strong>{requestSubmitted || pendingCount === 0 ? "Request received by reception." : "Request saved on this device."}</strong><small>{requestSubmitted || pendingCount === 0 ? "Reception can now review your reservation request." : lastError ? `Delivery is pending: ${lastError}` : "It will send automatically when the connection is available."}</small></p>
               </div>
             ) : null}
             {!requestId && lastError && pendingCount > 0 ? <p className="reservation-form__notice">Your request is safe on this device and will retry automatically.</p> : null}
