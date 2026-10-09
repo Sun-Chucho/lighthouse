@@ -1,4 +1,5 @@
 import { getLighthouseAdminDatabase } from "@/app/lib/firebase-admin-server";
+import { sanitizeForStorage } from "@/app/lib/storage-sanitize";
 import {
   STORAGE_WEBSITE_BOOKINGS,
   type WebsiteBookingPaymentStatus,
@@ -8,11 +9,12 @@ import {
 const bookingsRef = () => getLighthouseAdminDatabase().ref(`lighthouse-v1/${STORAGE_WEBSITE_BOOKINGS}`);
 
 export async function appendWebsiteBookingServer(booking: WebsiteBookingRecord) {
+  const cleanBooking = sanitizeForStorage(booking);
   await bookingsRef().transaction((value: WebsiteBookingRecord[] | null) => {
     const current = Array.isArray(value) ? value : [];
-    return current.some((entry) => entry.bookingReference === booking.bookingReference)
+    return current.some((entry) => entry.bookingReference === cleanBooking.bookingReference)
       ? undefined
-      : [booking, ...current];
+      : [cleanBooking, ...current];
   });
 }
 
