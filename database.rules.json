@@ -16,6 +16,11 @@
             ".validate": "((newData.child('roomNumber').val() === '301' || newData.child('roomNumber').val() === '304' || newData.child('roomNumber').val() === '308' || newData.child('roomNumber').val() === '313' || newData.child('roomNumber').val() === '314' || newData.child('roomNumber').val() === '315' || newData.child('roomNumber').val() === '317' || newData.child('roomNumber').val() === '318' || newData.child('roomNumber').val() === '319' || newData.child('roomNumber').val() === '320') && newData.child('ratePerNight').val() === 60000) || ((newData.child('roomNumber').val() === '302' || newData.child('roomNumber').val() === '303' || newData.child('roomNumber').val() === '305' || newData.child('roomNumber').val() === '306' || newData.child('roomNumber').val() === '307' || newData.child('roomNumber').val() === '309' || newData.child('roomNumber').val() === '310' || newData.child('roomNumber').val() === '311' || newData.child('roomNumber').val() === '312' || newData.child('roomNumber').val() === '316') && newData.child('ratePerNight').val() === 80000)"
           }
         }
+      },
+      "lighthouse-website-bookings": {
+        "$index": {
+          ".validate": "data.exists() && newData.child('id').val() === data.child('id').val()"
+        }
       }
     }
   }
