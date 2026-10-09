@@ -819,6 +819,17 @@ function mergeRemoteValueWithLocalOnlyRecords(key: string, localValue: unknown, 
 }
 
 function protectSyncedValueBeforeWrite(key: string, localValue: unknown, remoteValue: unknown) {
+  if (key === "lighthouse-website-bookings") {
+    // Only the booking API creates requests. A staff browser may update an
+    // existing request, but its cache must never recreate a deleted one.
+    if (!Array.isArray(remoteValue)) return [];
+    const remoteIds = new Set(remoteValue.map(getSyncRecordId));
+    const merged = mergeArrayRecordsForSync(localValue, remoteValue);
+    return Array.isArray(merged)
+      ? merged.filter((record) => remoteIds.has(getSyncRecordId(record)))
+      : remoteValue;
+  }
+
   if (key === "lighthouse-cashier-state") {
     return mergeCashierStateForSync(localValue, remoteValue);
   }
@@ -828,7 +839,6 @@ function protectSyncedValueBeforeWrite(key: string, localValue: unknown, remoteV
   }
 
   if (
-    key === "lighthouse-website-bookings" ||
     key === "lighthouse-company-stock" ||
     key === "lighthouse-live-chat" ||
     key === "lighthouse-expenses" ||
@@ -1013,6 +1023,9 @@ function applyLocalBookingOccupancy(key: string, value: unknown) {
 }
 
 function mergeRemoteValueForLocalApply(key: string, remoteValue: unknown) {
+  if (key === "lighthouse-website-bookings" && !hasPendingSyncMarker(key)) {
+    return Array.isArray(remoteValue) ? remoteValue : [];
+  }
   const localValue = getLocalSyncedValue(key);
   if (!hasUsableSyncedValue(key, localValue)) return applyLocalBookingOccupancy(key, remoteValue);
   if (!hasUsableSyncedValue(key, remoteValue)) return applyLocalBookingOccupancy(key, localValue);
@@ -1143,6 +1156,12 @@ async function hydrateStorageKeyFromFirebaseInternal(key: string) {
     );
     const remoteValue = snapshot.exists() ? sanitizeForStorage(sanitizeSyncedValue(key, snapshot.val())) : null;
     const localValue = getLocalSyncedValue(key);
+
+    if (key === "lighthouse-website-bookings" && remoteValue === null && !hasPendingSyncMarker(key)) {
+      applyHydratedValue([]);
+      markSyncHealthy(key);
+      return;
+    }
 
     const canonicalValue = sanitizeForStorage(getCanonicalDefaultValue(key));
     if (remoteValue === null && localValue === null && canonicalValue === null) return;
@@ -1276,7 +1295,10 @@ export function subscribeToSyncedStorageKey<T>(key: string, onChange: (value: T 
     if (document.visibilityState !== "visible" || !window.navigator.onLine) return;
     try {
       const remoteValue = sanitizeForStorage(sanitizeSyncedValue(key, await fetchServerSyncedStorageValue<T>(key)));
-      if (remoteValue === null) return;
+      if (remoteValue === null) {
+        if (key === "lighthouse-website-bookings") readSnapshotValue<T>(key, [] as T, onChange);
+        return;
+      }
       if (shouldIgnoreRemoteValue(key, remoteValue)) return;
       const nextValue = sanitizeForStorage(sanitizeSyncedValue(key, mergeRemoteValueForLocalApply(key, remoteValue)));
       const currentValue = sanitizeForStorage(readParsedLocalValue<T>(key));
@@ -1345,6 +1367,12 @@ export function subscribeToSyncedStorageKey<T>(key: string, onChange: (value: T 
             firebaseRetryTimer = null;
           }
           if (!snapshot.exists()) {
+            if (key === "lighthouse-website-bookings") {
+              readSnapshotValue<T>(key, [] as T, onChange);
+              markSyncHealthy(key);
+              stopFallbackPolling();
+              return;
+            }
             const fallbackValue = sanitizeForStorage((getLocalFallbackForSync(key) ?? getCanonicalDefaultValue(key)) as T | null);
             if (fallbackValue !== null) {
               setLocalCache(key, JSON.stringify(fallbackValue));
