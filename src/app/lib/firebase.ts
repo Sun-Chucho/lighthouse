@@ -43,18 +43,19 @@ export function ensureFirebaseAuthReady() {
       // before restoration completed made the first POS realtime subscription
       // fail permanently on some reloads.
       await firebaseAuth.authStateReady();
-      if (firebaseAuth.currentUser) {
-        return;
-      }
-
-      throw new Error("A verified Lighthouse staff session is required for operational synchronization.");
     })().catch((error) => {
       authReadyPromise = null;
       throw error;
     });
   }
 
-  return authReadyPromise;
+  return authReadyPromise.then(() => {
+    // Persistence initialization is shared, but the signed-in user can change
+    // after the first call (fresh login, logout, or a restored session).
+    if (!firebaseAuth.currentUser || firebaseAuth.currentUser.isAnonymous) {
+      throw new Error("A verified Lighthouse staff session is required for operational synchronization.");
+    }
+  });
 }
 
 let staffAuthenticationPromise: ReturnType<typeof authenticateStaffWithPin> | null = null;

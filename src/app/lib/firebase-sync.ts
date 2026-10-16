@@ -113,17 +113,19 @@ function hasRecentSyncSuccess() {
 }
 
 function getEffectiveConnectionState() {
-  if (!firebaseAuth.currentUser || firebaseAuth.currentUser.isAnonymous) return false;
+  if (typeof window === "undefined" || !window.navigator.onLine || !firebaseAuth.currentUser || firebaseAuth.currentUser.isAnonymous) return false;
   if (_firebaseRealtimeConnected) return true;
-  if (hasRecentSyncSuccess()) return true;
-  if (typeof window !== "undefined" && window.navigator.onLine && Object.keys(_lastSyncedAt).length > 0) return true;
-  return false;
+  return SERVER_SYNC_FALLBACK_ENABLED && hasRecentSyncSuccess();
+}
+
+function refreshConnectionState() {
+  _isConnected = getEffectiveConnectionState();
+  _connectionListeners.forEach((fn) => fn(_isConnected));
 }
 
 function emitConnectionState(connected: boolean) {
   _firebaseRealtimeConnected = connected;
-  _isConnected = connected ? getEffectiveConnectionState() : false;
-  _connectionListeners.forEach((fn) => fn(_isConnected));
+  refreshConnectionState();
   if (connected) void flushPendingFirebaseWrites();
 }
 
@@ -131,8 +133,7 @@ function markSyncHealthy(key?: string) {
   if (key) {
     _lastSyncedAt[key] = Date.now();
   }
-  _isConnected = true;
-  _connectionListeners.forEach((fn) => fn(true));
+  refreshConnectionState();
 }
 
 async function fetchServerSyncedStorageValueRequest<T>(key: string): Promise<T | null> {
@@ -243,20 +244,27 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
 
 if (typeof window !== "undefined") {
   window.addEventListener("online", () => {
+    refreshConnectionState();
     void ensureFirebaseAuthReady()
       .then(() => flushPendingFirebaseWrites())
-      .catch(() => emitConnectionState(false));
+      .catch(() => refreshConnectionState());
   });
-  void ensureFirebaseAuthReady()
-    .then(() => {
-      onValue(ref(firebaseDatabase, ".info/connected"), (snapshot) => {
-        emitConnectionState(snapshot.val() === true);
-      });
-    })
-    .catch((error) => {
-      emitConnectionState(false);
-      console.error("Firebase connection monitoring failed", error);
-    });
+  window.addEventListener("offline", refreshConnectionState);
+  // Start monitoring before sign-in. A fresh browser has no persisted staff
+  // user, and waiting for one here permanently skipped the connection listener.
+  onValue(ref(firebaseDatabase, ".info/connected"), (snapshot) => {
+    emitConnectionState(snapshot.val() === true);
+  }, (error) => {
+    emitConnectionState(false);
+    console.error("Firebase connection monitoring failed", error);
+  });
+  onIdTokenChanged(firebaseAuth, (user) => {
+    if (!user) {
+      for (const key of Object.keys(_lastSyncedAt)) delete _lastSyncedAt[key];
+    }
+    refreshConnectionState();
+    if (user && !user.isAnonymous && _firebaseRealtimeConnected) void flushPendingFirebaseWrites();
+  });
 }
 
 export function isFirebaseConnected() {
@@ -265,7 +273,7 @@ export function isFirebaseConnected() {
 
 export function subscribeToConnectionStatus(onChange: (connected: boolean) => void) {
   _connectionListeners.add(onChange);
-  onChange(_isConnected || getEffectiveConnectionState());
+  onChange(getEffectiveConnectionState());
   return () => {
     _connectionListeners.delete(onChange);
   };
