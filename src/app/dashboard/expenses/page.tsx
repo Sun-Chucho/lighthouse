@@ -56,6 +56,8 @@ export default function ExpensesPage() {
   const [editNotes, setEditNotes] = useState("");
   const [editDate, setEditDate] = useState("");
   const [editAmount, setEditAmount] = useState("");
+  const [editDepartment, setEditDepartment] = useState<ExpenseDepartment>("kitchen");
+  const [editAmountType, setEditAmountType] = useState<ExpenseAmountType>("cash");
   const [movingExpense, setMovingExpense] = useState<ExpenseRecord | null>(null);
   const [moveTarget, setMoveTarget] = useState<ExpenseDepartment>("kitchen");
 
@@ -132,6 +134,8 @@ export default function ExpensesPage() {
     setEditNotes(expense.notes ?? "");
     setEditDate(toDateTimeLocal(expense.createdAt));
     setEditAmount(String(expense.amount));
+    setEditDepartment(expense.department);
+    setEditAmountType(expense.amountType);
   };
 
   const updateExpense = () => {
@@ -146,7 +150,8 @@ export default function ExpensesPage() {
     const updatedAt = Date.now();
     const nextExpenses = currentExpenses.map((expense) =>
       expense.id === editingExpense.id
-        ? { ...expense, title: nextTitle, notes: editNotes.trim() || undefined, amount: parsedAmount, createdAt: parsedDate, updatedAt }
+        ? { ...expense, department: editDepartment, title: nextTitle, notes: editNotes.trim() || undefined,
+            amount: parsedAmount, amountType: editAmountType, createdAt: parsedDate, updatedAt }
         : expense,
     );
     setExpenses(nextExpenses);
@@ -309,10 +314,22 @@ export default function ExpensesPage() {
             <DialogHeader>
               <DialogTitle className="font-black uppercase tracking-tight">Edit Expense</DialogTitle>
               <DialogDescription>
-                Update the description, notes, date, and amount for this expense.
+                Update the details for this expense.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="expense-edit-department">Department</Label>
+                <select id="expense-edit-department" className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={editDepartment} onChange={(event) => setEditDepartment(event.target.value as ExpenseDepartment)}>
+                  {EXPENSE_DEPARTMENTS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="expense-edit-type">Type of Amount</Label>
+                <select id="expense-edit-type" className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={editAmountType} onChange={(event) => setEditAmountType(event.target.value as ExpenseAmountType)}>
+                  {EXPENSE_AMOUNT_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </div>
               <div className="space-y-2 sm:col-span-2">
                 <Label htmlFor="expense-edit-title" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                   Description
